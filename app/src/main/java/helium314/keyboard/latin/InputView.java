@@ -111,6 +111,12 @@ public final class InputView extends FrameLayout {
 
     private boolean mFloatingHalvesActive = false;
 
+    /** show or hide the opacity slider of the floating halves (above the left half) */
+    public void toggleHalvesOpacityBar() {
+        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
+        frame.setOpacityBarVisible(!HalvesLayout.opacityBarVisible);
+    }
+
     /**
      * Switch the main keyboard frame between normal layout and the floating halves layout.
      * The input view already fills the whole IME window (see updateSoftInputWindowLayoutParameters).

@@ -95,6 +95,23 @@
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:contentDescription="@string/floating_halves" android:scaleType="fitCenter"
         android:src="@drawable/ic_resize_corner" />
+    <!-- opacity slider for floating halves mode, shown above the left half (see KeyboardFrameLayout) -->
+    <LinearLayout android:id="@+id/halves_opacity_bar" android:visibility="gone"
+        android:orientation="horizontal" android:gravity="center_vertical"
+        android:paddingStart="8dp" android:paddingEnd="8dp"
+        android:layout_width="wrap_content" android:layout_height="wrap_content">
+        <ImageView android:id="@+id/halves_opacity_icon"
+            android:layout_width="24dp" android:layout_height="24dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_opacity" />
+        <SeekBar android:id="@+id/halves_opacity_seekbar"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:max="70"
+            android:contentDescription="@string/halves_opacity_slider" />
+        <TextView android:id="@+id/halves_opacity_value"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:minWidth="40dp" android:gravity="end" android:textSize="14sp" />
+    </LinearLayout>
     <LinearLayout
         android:id="@+id/float_handle_container"
         android:orientation="horizontal"

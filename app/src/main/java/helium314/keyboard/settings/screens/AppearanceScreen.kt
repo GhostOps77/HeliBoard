@@ -75,6 +75,7 @@ fun AppearanceScreen(
         R.string.settings_category_miscellaneous,
         Settings.PREF_FLOATING_HALVES,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_DOCKED else null,
+        if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_STRIP else null,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_RESET else null,
         Settings.PREF_ENABLE_SPLIT_KEYBOARD,
         if (prefs.getBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD_LANDSCAPE, Defaults.PREF_ENABLE_SPLIT_KEYBOARD)
@@ -221,6 +222,13 @@ fun createAppearanceSettings(context: Context) = listOf(
     },
     Setting(context, Settings.PREF_FLOATING_HALVES_DOCKED, R.string.floating_halves_dock, R.string.floating_halves_dock_summary) {
         SwitchPreference(it, Defaults.PREF_FLOATING_HALVES_DOCKED) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+    },
+    Setting(context, Settings.PREF_FLOATING_HALVES_STRIP, R.string.floating_halves_strip) { setting ->
+        val items = listOf(
+            stringResource(R.string.floating_halves_strip_single) to Settings.FLOATING_HALVES_STRIP_SINGLE,
+            stringResource(R.string.floating_halves_strip_linked) to Settings.FLOATING_HALVES_STRIP_LINKED,
+        )
+        ListPreference(setting, items, Defaults.PREF_FLOATING_HALVES_STRIP) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_FLOATING_HALVES_RESET, R.string.floating_halves_reset, R.string.floating_halves_reset_summary) { setting ->
         val ctx = LocalContext.current

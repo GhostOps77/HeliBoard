@@ -10,8 +10,11 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.content.res.ColorStateList
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.TextView
 import androidx.core.view.doOnLayout
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.MainKeyboardView
@@ -48,6 +51,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     private lateinit var handleRight: ImageView
     private lateinit var gripLeft: ImageView
     private lateinit var gripRight: ImageView
+    private lateinit var opacityBar: View
+    private lateinit var opacitySeekBar: SeekBar
+    private lateinit var opacityValue: TextView
     private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight)
 
     private val panelOutline = object : ViewOutlineProvider() {
@@ -67,6 +73,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         handleRight = findViewById(R.id.halves_handle_right)
         gripLeft = findViewById(R.id.halves_grip_left)
         gripRight = findViewById(R.id.halves_grip_right)
+        opacityBar = findViewById(R.id.halves_opacity_bar)
+        opacitySeekBar = findViewById(R.id.halves_opacity_seekbar)
+        opacityValue = findViewById(R.id.halves_opacity_value)
         // the grip icon is drawn for the bottom right corner, the left panel has its grip in the bottom left corner
         gripLeft.scaleX = -1f
         setChildrenDrawingOrderEnabled(true)
@@ -74,6 +83,48 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         setTouchHandling(handleRight, HalvesLayout.RIGHT, false)
         setTouchHandling(gripLeft, HalvesLayout.LEFT, true)
         setTouchHandling(gripRight, HalvesLayout.RIGHT, true)
+        setupOpacitySlider()
+    }
+
+    private fun setupOpacitySlider() {
+        opacitySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                // never completely transparent: the slider starts at the minimum opacity
+                HalvesLayout.setOpacity(context, HalvesLayout.MIN_OPACITY + progress / 100f, false)
+                applyOpacity()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                HalvesLayout.setOpacity(context, HalvesLayout.opacity, true)
+            }
+        })
+    }
+
+    /** show or hide the opacity slider (above the left half) */
+    fun setOpacityBarVisible(visible: Boolean) {
+        val show = visible && halvesMode
+        HalvesLayout.opacityBarVisible = show
+        opacityBar.visibility = if (show) VISIBLE else GONE
+        if (show) {
+            val colors = Settings.getValues().mColors
+            colors.setBackground(opacityBar, ColorType.STRIP_BACKGROUND)
+            val textColor = colors.get(ColorType.KEY_TEXT)
+            opacityValue.setTextColor(textColor)
+            colors.setColor(opacityBar.findViewById<ImageView>(R.id.halves_opacity_icon), ColorType.KEY_TEXT)
+            opacitySeekBar.progressTintList = ColorStateList.valueOf(textColor)
+            opacitySeekBar.thumbTintList = ColorStateList.valueOf(textColor)
+            opacitySeekBar.progress = ((HalvesLayout.opacity - HalvesLayout.MIN_OPACITY) * 100).toInt()
+            applyOpacity()
+        }
+        requestLayout() // also updates the touchable region
+    }
+
+    /** the keyboard (panels, keys, handles and grips) is see-through, but never invisible; the toolbar stays fully opaque */
+    private fun applyOpacity() {
+        val alpha = if (halvesMode) HalvesLayout.opacity else 1f
+        listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = alpha }
+        opacityValue.text = "${(alpha * 100).toInt()}%"
     }
 
     private var interactionStartX = 0f
@@ -125,6 +176,10 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val visibility = if (halvesMode && !HalvesLayout.emojiMode) VISIBLE else GONE
         gripLeft.visibility = visibility
         gripRight.visibility = visibility
+        // linked: only the left handle moves the halves (both vertically), the right half has no handle
+        handleRight.visibility = if (halvesMode && !HalvesLayout.linked) VISIBLE else GONE
+        if (!halvesMode) setOpacityBarVisible(false)
+        applyOpacity()
         requestLayout()
     }
 
@@ -173,6 +228,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         measureExactly(handleRight, HalvesLayout.right.width(), HalvesLayout.handleHeight)
         measureExactly(gripLeft, HalvesLayout.gripSize, HalvesLayout.gripSize)
         measureExactly(gripRight, HalvesLayout.gripSize, HalvesLayout.gripSize)
+        if (opacityBar.visibility != GONE)
+            measureExactly(opacityBar, HalvesLayout.opacityBar.width(), HalvesLayout.opacityBar.height())
     }
 
     private fun measureExactly(view: View, width: Int, height: Int) =
@@ -193,6 +250,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val grip = HalvesLayout.gripSize
         gripLeft.layout(HalvesLayout.left.left, HalvesLayout.left.bottom - grip, HalvesLayout.left.left + grip, HalvesLayout.left.bottom)
         gripRight.layout(HalvesLayout.right.right - grip, HalvesLayout.right.bottom - grip, HalvesLayout.right.right, HalvesLayout.right.bottom)
+        if (opacityBar.visibility != GONE) opacityBar.layout(HalvesLayout.opacityBar)
         floatingHandleContainer.layout(0, 0, 0, 0)
     }
 
@@ -202,11 +260,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     // Handles and grips are after the wrapper in the layout, so they are above the keyboard view as well.
     override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int): Int {
         if (!halvesMode || !::strip.isInitialized) return drawingPosition
-        val stripIndex = indexOfChild(strip)
-        return when {
-            drawingPosition == childCount - 1 -> stripIndex
-            drawingPosition >= stripIndex -> drawingPosition + 1
-            else -> drawingPosition
-        }
+        // strip and opacity bar are drawn last (and get touches first), the other children keep their order
+        val last = intArrayOf(indexOfChild(strip), indexOfChild(opacityBar))
+        val rest = (0 until childCount).filter { it !in last }
+        return if (drawingPosition < rest.size) rest[drawingPosition] else last[drawingPosition - rest.size]
     }
 }

@@ -149,6 +149,8 @@ public class SettingsValues {
     public final boolean mIsFloatingHalves;
     /** the "floating split halves" setting is on (even if the halves are docked at the moment, see {@link #mIsFloatingHalves}) */
     public final boolean mFloatingHalvesAvailable;
+    /** halves are moved together vertically with the left handle, and the toolbar is only above the right half */
+    public final boolean mFloatingHalvesLinked;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -294,6 +296,8 @@ public class SettingsValues {
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
         mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        mFloatingHalvesLinked = Settings.FLOATING_HALVES_STRIP_LINKED.equals(
+                prefs.getString(Settings.PREF_FLOATING_HALVES_STRIP, Defaults.PREF_FLOATING_HALVES_STRIP));
         // docked halves are just the normal keyboard
         mIsFloatingHalves = mFloatingHalvesAvailable
                 && !prefs.getBoolean(Settings.PREF_FLOATING_HALVES_DOCKED, Defaults.PREF_FLOATING_HALVES_DOCKED);
