@@ -15,10 +15,12 @@ import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.animation.AnimationUtils
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodSubtype
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.Toast
 import androidx.core.view.isGone
@@ -28,6 +30,7 @@ import helium314.keyboard.keyboard.KeyboardLayoutSet.Companion.KeyboardLayoutSet
 import helium314.keyboard.keyboard.KeyboardTheme.Companion.getKeyboardTheme
 import helium314.keyboard.keyboard.clipboard.ClipboardHistoryView
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView
+import helium314.keyboard.keyboard.internal.HalvesLayout
 import helium314.keyboard.keyboard.internal.KeyboardState
 import helium314.keyboard.keyboard.internal.LayoutDirective
 import helium314.keyboard.keyboard.internal.ShiftMode
@@ -95,11 +98,17 @@ class KeyboardSwitcher private constructor() {
     // currently used KeyboardLayoutSet, null until first call to loadKeyboard
     private var keyboardLayoutSet: KeyboardLayoutSet? = null
 
+    private var floatingHalvesActive = false
+    private var emojiHalvesPlaced = false
+    /** true if the current keyboard is laid out as two floating halves (and not e.g. emoji or clipboard) */
+    val isFloatingHalvesActive get() = floatingHalvesActive
+
     val mainKeyboardView get() = inputView?.keyboardView
     val keyboard get() = mainKeyboardView?.keyboard
     val wrapperView get() = inputView?.wrapperView
     val stripContainer get() = inputView?.stripContainer
-    val emojiTabStrip get() = inputView?.emojiTabStrip
+    /** the layout containing the category tabs (inside of the view that is shown / hidden and scrolls) */
+    val emojiTabStrip get() = inputView?.mainKeyboardFrame?.stripContainer?.emojiTabStrip
     val clipboardStrip get() = inputView?.mainKeyboardFrame?.stripContainer?.clipboardStrip
     val isShowingEmojiPalettes get() = emojiPalettes?.isShown == true
     val isShowingClipboardHistory get() = clipboardHistory?.isShown == true
@@ -223,6 +232,10 @@ class KeyboardSwitcher private constructor() {
             insetsUpdater.setInsets(outInsets, inputView.root)
             return
         }
+        if (floatingHalvesActive && visibleKeyboardView.isShown) {
+            updateInsetsForFloatingHalves(outInsets, inputView)
+            return
+        }
         val stripContainer = inputView.stripContainer
         val stripHeight = if (stripContainer.isShown) stripContainer.height else 0
         var visibleTopY = inputHeight - (if (visibleKeyboardView.isShown) visibleKeyboardView.height else 0) - stripHeight
@@ -261,15 +274,114 @@ class KeyboardSwitcher private constructor() {
         insetsUpdater.setInsets(outInsets, inputView.root)
     }
 
+    /**
+     * Floating halves: the IME window covers the whole screen, but the app must neither be resized nor lose touches.
+     * So we report that no space is used (content and visible top insets are the full window height) and that only
+     * the region of the two halves (and the strip) is touchable. Everything else goes through to the app.
+     * This means apps with adjustResize don't move their text field up, the user moves the halves instead.
+     */
+    private fun updateInsetsForFloatingHalves(outInsets: InputMethodService.Insets, inputView: InputViewBinding) {
+        val windowHeight = inputView.root.height
+        outInsets.contentTopInsets = windowHeight
+        outInsets.visibleTopInsets = windowHeight
+        if (hasSuggestionStripView())
+            inputView.suggestionStripView.setMoreSuggestionsHeight(HalvesLayout.strip.top)
+        outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION
+        if (isShowingPopupKeysPanel || (hasSuggestionStripView() && inputView.suggestionStripView.isShowingMoreSuggestionPanel)) {
+            // popups may extend outside of the halves, like in the normal keyboard (which uses the area above it)
+            outInsets.touchableRegion.set(0, 0, inputView.root.width, windowHeight)
+        } else {
+            HalvesLayout.fillTouchableRegion(outInsets.touchableRegion, inputView.stripContainer.isShown)
+        }
+        insetsUpdater.setInsets(outInsets, inputView.root)
+    }
+
     private fun hasSuggestionStripView() = Settings.getValues().mToolbarMode != ToolbarMode.HIDDEN && !latinIME.isEmojiSearch
+
+    /**
+     * With floating halves the emoji palette (a single view of normal keyboard size) is scaled and moved so it covers the two
+     * halves, the empty columns in the middle of its grid are in the gap. Without halves it is shown at its normal place.
+     */
+    private fun applyEmojiHalvesPlacement(halves: Boolean) {
+        val emoji = emojiPalettes ?: return
+        val inputView = inputView ?: return
+        if (!halves && !emojiHalvesPlaced) return // nothing to undo, and this is called whenever the keyboard layout changes
+        emojiHalvesPlaced = halves
+        // with floating halves the category icons get a minimum size (the strip scrolls), docked they fill the width as usual
+        val tabs = inputView.mainKeyboardFrame.stripContainer.emojiTabStrip
+        val minTabWidth = if (halves) (44 * themeContext.resources.displayMetrics.density).toInt() else 0
+        for (i in 0 until tabs.childCount)
+            tabs.getChildAt(i).minimumWidth = minTabWidth
+        // the gaps of the emoji pages are measured when they are created, which can be after this: update the placement then
+        HalvesLayout.emojiListener = if (halves) Runnable {
+            val root = this.inputView?.root ?: return@Runnable
+            root.post {
+                if (!emojiHalvesPlaced) return@post
+                applyEmojiHalvesPlacement(true)
+                root.setFloatingHalvesActive(true)
+            }
+        } else null
+        val lp = emoji.layoutParams as FrameLayout.LayoutParams
+        if (halves) {
+            val sv = Settings.getValues()
+            val width = ResourceUtils.getKeyboardWidth(themeContext, sv) + emoji.paddingLeft + emoji.paddingRight
+            val height = ResourceUtils.getSecondaryKeyboardHeight(themeContext.resources, sv) + emoji.paddingTop + emoji.paddingBottom
+            HalvesLayout.setEmojiMode(true, width, height)
+            lp.gravity = Gravity.TOP or Gravity.START
+            emoji.pivotX = 0f
+            emoji.pivotY = 0f
+            emoji.scaleX = HalvesLayout.emojiScale
+            emoji.scaleY = HalvesLayout.emojiScale
+            emoji.translationX = HalvesLayout.emojiContent.left.toFloat()
+            emoji.translationY = HalvesLayout.emojiContent.top.toFloat()
+        } else {
+            HalvesLayout.setEmojiMode(false, 0, 0)
+            lp.gravity = Gravity.BOTTOM
+            emoji.scaleX = 1f
+            emoji.scaleY = 1f
+            emoji.translationX = 0f
+            emoji.translationY = 0f
+        }
+        emoji.layoutParams = lp
+    }
+
+    /** the emoji palette's halves are being moved: put the palette where they are now */
+    fun updateEmojiHalvesPlacement() {
+        if (emojiHalvesPlaced) applyEmojiHalvesPlacement(true)
+    }
+
+    /** toolbar key: show / hide the opacity slider of the floating halves */
+    fun toggleHalvesOpacityBar() {
+        val root = inputView?.root ?: return
+        if (!floatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
+            showToast(latinIME.getString(R.string.halves_opacity_unavailable), true)
+            return
+        }
+        root.toggleHalvesOpacityBar()
+    }
+
+    /** toolbar key: dock the floating halves into one normal keyboard, or release them again */
+    fun toggleHalvesDock() {
+        val settings = Settings.getInstance()
+        if (!settings.current.mFloatingHalvesAvailable) {
+            showToast(latinIME.getString(R.string.halves_dock_unavailable), true)
+            return
+        }
+        // mIsFloatingHalves is false while docked
+        settings.writeFloatingHalvesDocked(settings.current.mIsFloatingHalves)
+        reloadKeyboard()
+    }
 
     fun loadKeyboard(
         editorInfo: EditorInfo?, settingsValues: SettingsValues, currentAutoCapsState: Int,
         currentRecapitalizeState: RecapitalizeMode?, internalAction: KeyboardLayoutSet.InternalAction?
     ) {
         val builder = KeyboardLayoutSet.Builder(themeContext, editorInfo, settingsValues)
+        // for floating halves this is the size of the keys in a normal keyboard, the builder moves them into the panels
         val keyboardWidth = ResourceUtils.getKeyboardWidth(themeContext, settingsValues)
         val keyboardHeight = ResourceUtils.getKeyboardHeight(themeContext.resources, settingsValues)
+        if (settingsValues.mIsFloatingHalves)
+            HalvesLayout.refreshMetrics(themeContext, inputView?.root?.width ?: 0, inputView?.root?.height ?: 0)
         keyboardLayoutSet = builder.setKeyboardGeometry(keyboardWidth, keyboardHeight)
             .setSubtype(richImm.currentSubtype)
             .setInternalAction(internalAction)
@@ -291,6 +403,7 @@ class KeyboardSwitcher private constructor() {
     }
 
     fun onHideWindow() {
+        inputView?.root?.hideHalvesOpacityBar()
         inputView?.keyboardView?.onHideWindow()
     }
 
@@ -311,7 +424,7 @@ class KeyboardSwitcher private constructor() {
         inputView.wrapperView.isGone = Settings.getInstance().readShowToolbarOnly() && toggleState == KeyboardSwitchState.OTHER
         emojiPalettes?.isGone = true
         emojiPalettes?.stopEmojiPalettes()
-        inputView.emojiTabStrip.isGone = true
+        inputView.emojiTabStripScrollView.isGone = true
         inputView.clipboardStripScrollView.isGone = true
         inputView.suggestionStripView.isVisible = latinIME.hasSuggestionStripView()
         clipboardHistory?.isGone = true
@@ -560,19 +673,23 @@ class KeyboardSwitcher private constructor() {
             if (KeyboardState.SwitchActions.DEBUG_ACTION) {
                 Log.d(TAG, "setEmojiKeyboard")
             }
+            // with floating halves, the emoji palette is shown over the two halves (applied below, once the palette is set up)
+            floatingHalvesActive = Settings.getValues().mIsFloatingHalves
             inputView.wrapperView.isGone = false
             inputView.keyboardFrame.isGone = false
             inputView.keyboardView.isGone = true
             inputView.suggestionStripView.isGone = true
             inputView.stripContainer.isVisible = Settings.getValues().isSecondaryStripVisible
             inputView.clipboardStripScrollView.isGone = true
-            inputView.emojiTabStrip.isGone = false
+            inputView.emojiTabStripScrollView.isGone = false
             clipboardHistory?.isGone = true
             inputView.emojiPalettesView.startEmojiPalettes(
                 inputView.keyboardView.keyVisualAttribute,
                 latinIME.currentInputEditorInfo, latinIME.mKeyboardActionListener
             )
             inputView.emojiPalettesView.isGone = false
+            applyEmojiHalvesPlacement(floatingHalvesActive)
+            inputView.root.setFloatingHalvesActive(floatingHalvesActive)
         }
 
         override fun setClipboardKeyboard() {
@@ -580,10 +697,14 @@ class KeyboardSwitcher private constructor() {
             if (KeyboardState.SwitchActions.DEBUG_ACTION) {
                 Log.d(TAG, "setClipboardKeyboard")
             }
+            // emoji and clipboard are always shown as one normal docked keyboard
+            floatingHalvesActive = false
+            applyEmojiHalvesPlacement(false)
+            inputView.root.setFloatingHalvesActive(false)
             inputView.wrapperView.isGone = false
             inputView.keyboardFrame.isGone = false
             inputView.keyboardView.isGone = true
-            inputView.emojiTabStrip.isGone = true
+            inputView.emojiTabStripScrollView.isGone = true
             inputView.suggestionStripView.isGone = true
             inputView.stripContainer.isVisible = Settings.getValues().isSecondaryStripVisible
             inputView.clipboardStripScrollView.post { inputView.clipboardStripScrollView.fullScroll(HorizontalScrollView.FOCUS_RIGHT) }
@@ -663,7 +784,11 @@ class KeyboardSwitcher private constructor() {
             val oldKeyboard = inputView.keyboardView.keyboard
             val newKeyboard = keyboardLayoutSet!!.getKeyboard(keyboardElement)
             inputView.keyboardView.setKeyboard(newKeyboard)
-            inputView.root.setKeyboardTopPadding(newKeyboard.mTopPadding)
+            floatingHalvesActive = newKeyboard.mId.isFloatingHalves
+            applyEmojiHalvesPlacement(false) // not showing emoji any more (if we were)
+            inputView.root.setFloatingHalvesActive(floatingHalvesActive)
+            // the keyboard view covers the whole window in halves mode, so its top must not forward touches to the strip
+            inputView.root.setKeyboardTopPadding(if (floatingHalvesActive) 0 else newKeyboard.mTopPadding)
             inputView.keyboardView.setKeyPreviewPopupEnabled(currentSettingsValues.mKeyPreviewPopupOn)
             inputView.keyboardView.updateShortcutKey(richImm.isShortcutImeReady)
             val subtypeChanged = (oldKeyboard == null) || newKeyboard.mId.subtype != oldKeyboard.mId.subtype
@@ -709,7 +834,7 @@ class KeyboardSwitcher private constructor() {
         private val InputViewBinding.wrapperView get() = mainKeyboardFrame.keyboardViewWrapper
         private val InputViewBinding.keyboardFrame get() = mainKeyboardFrame.root
         private val InputViewBinding.keyboardView get() = mainKeyboardFrame.keyboardView
-        private val InputViewBinding.emojiTabStrip get() = mainKeyboardFrame.stripContainer.emojiTabStrip
+        private val InputViewBinding.emojiTabStripScrollView get() = mainKeyboardFrame.stripContainer.emojiTabStripScrollView
         private val InputViewBinding.clipboardStripScrollView get() = mainKeyboardFrame.stripContainer.clipboardStripScrollView
         private val InputViewBinding.suggestionStripView get() = mainKeyboardFrame.stripContainer.suggestionStripView
         private val InputViewBinding.stripContainer get() = mainKeyboardFrame.stripContainer.root

@@ -106,6 +106,13 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_BOTTOM_PADDING_SCALE_PREFIX = "bottom_padding_scale";
     public static final String PREF_SIDE_PADDING_SCALE_PREFIX = "side_padding_scale";
     public static final String PREF_KEY_GAP_SCALE_PREFIX = "key_gap_scale";
+    public static final String PREF_FLOATING_HALVES = "floating_halves";
+    public static final String PREF_FLOATING_HALVES_DOCKED = "floating_halves_docked";
+    public static final String PREF_FLOATING_HALVES_RESET = "floating_halves_reset";
+    public static final String PREF_FLOATING_HALVES_STRIP = "floating_halves_strip";
+    public static final String PREF_OPACITY_EVERYWHERE = "opacity_everywhere";
+    public static final String FLOATING_HALVES_STRIP_SINGLE = "single";
+    public static final String FLOATING_HALVES_STRIP_LINKED = "linked";
     public static final String PREF_FLOATING_HEIGHT_PREFIX = "floating_height";
     public static final String PREF_FLOATING_WIDTH_PREFIX = "floating_width";
     public static final String PREF_FLOATING_ENABLED_PREFIX = "floating_enabled";
@@ -427,6 +434,10 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
         int index = SettingsKt.findIndexOfDefaultSetting(landscape, mSettingsValues.mIsSplitKeyboardEnabled, FoldableUtils.INSTANCE.isFolded());
         String key = SettingsKt.createPrefKeyForBooleanSettings(PREF_ONE_HANDED_GRAVITY_PREFIX, index, 3);
         mPrefs.edit().putInt(key, gravity).apply();
+    }
+
+    public void writeFloatingHalvesDocked(boolean docked) {
+        mPrefs.edit().putBoolean(PREF_FLOATING_HALVES_DOCKED, docked).apply();
     }
 
     public void writeSplitKeyboardEnabled(boolean enabled, boolean isLandscape, boolean isFolded) {

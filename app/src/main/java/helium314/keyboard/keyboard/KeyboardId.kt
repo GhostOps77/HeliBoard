@@ -5,6 +5,7 @@
  */
 package helium314.keyboard.keyboard
 
+import helium314.keyboard.keyboard.internal.HalvesLayout
 import android.text.InputType
 import android.text.TextUtils
 import android.view.inputmethod.EditorInfo
@@ -12,6 +13,7 @@ import helium314.keyboard.compat.EditorInfoCompatUtils.imeActionName
 import helium314.keyboard.latin.CapsMode
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.RichInputMethodSubtype
+import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.InputTypeUtils
 
 /**
@@ -37,7 +39,9 @@ data class KeyboardId(
     val isSplitLayout: Boolean,
     val oneHandedModeEnabled: Boolean,
     val internalAction: KeyboardLayoutSet.InternalAction?,
-    val emojiSearchAvailable: Boolean
+    val emojiSearchAvailable: Boolean,
+    /** 0 unless the keyboard is laid out as floating halves, then a key derived from the window size / halves layout (so the keyboard cache stays correct) */
+    val halvesKey: Int = 0,
 ) {
     lateinit var editorInfo: EditorInfo // we don't want it in the data class constructor
 
@@ -62,6 +66,9 @@ data class KeyboardId(
         params.settingsValues?.mOneHandedModeEnabled ?: false,
         params.internalAction,
         params.emojiSearchAvailable,
+        if (element.canBeFloatingHalves && params.settingsValues?.mIsFloatingHalves == true
+            || element == KeyboardElement.EMOJI_BOTTOM_ROW && Settings.getValues().mIsFloatingHalves) // bottom row is built without settingsValues
+            HalvesLayout.cacheKey() else 0,
     ) {
         editorInfo = params.editorInfo
     }
@@ -75,6 +82,8 @@ data class KeyboardId(
         return (imeOptions and EditorInfo.IME_FLAG_NAVIGATE_PREVIOUS) != 0
             || imeAction == EditorInfo.IME_ACTION_PREVIOUS
     }
+
+    val isFloatingHalves get() = halvesKey != 0
 
     val isPasswordInput get() = InputTypeUtils.isAnyPasswordInputType(inputType)
 
@@ -123,6 +132,8 @@ enum class KeyboardElement(val descriptionResId: Int) {
 
     val isAlphabet get() = this < SYMBOLS
     val isAlphaOrSymbol get() = this <= SYMBOLS_SHIFTED
+    /** layouts made of key rows that can be cut in the middle into two floating halves (emoji and clipboard are views, handled separately) */
+    val canBeFloatingHalves get() = this <= SYMBOLS_SHIFTED || this == DPAD || this == NUMPAD
     val isAlphabetShifted get() = isAlphabet && this != ALPHABET
     val isAlphabetShiftedManually get() = this == ALPHABET_MANUAL_SHIFTED || this == ALPHABET_SHIFT_LOCKED
     val isNumberLayout get() = this in NUMPAD..PHONE_SYMBOLS
