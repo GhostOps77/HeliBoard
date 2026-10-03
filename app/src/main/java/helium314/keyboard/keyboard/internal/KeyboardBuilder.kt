@@ -267,7 +267,8 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         val leftBlock = blockOf(leftKeys)
         val rightBlock = blockOf(rightKeys)
         fun median(values: List<Float>) = values.sorted()[values.size / 2]
-        HalvesLayout.layoutForBuild(leftBlock, rightBlock, median(allKeys.map { it.mAbsoluteWidth }), median(allKeys.map { it.mAbsoluteHeight }))
+        HalvesLayout.layoutForBuild(leftBlock, rightBlock, median(allKeys.map { it.mAbsoluteWidth }), median(allKeys.map { it.mAbsoluteHeight }),
+            mParams.mBaseWidth, mParams.mBaseHeight)
 
         // map key block (design coordinates of the normal keyboard) to the key area of its panel
         fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
