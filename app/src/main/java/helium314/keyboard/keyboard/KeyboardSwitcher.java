@@ -35,6 +35,7 @@ import androidx.annotation.Nullable;
 import helium314.keyboard.event.Event;
 import helium314.keyboard.keyboard.clipboard.ClipboardHistoryView;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.keyboard.internal.KeyboardState;
 import helium314.keyboard.keyboard.internal.LayoutDirective;
 import helium314.keyboard.keyboard.internal.ShiftMode;
@@ -68,6 +69,7 @@ public final class KeyboardSwitcher {
     private KeyboardWrapperView mKeyboardViewWrapper;
     private View mMainKeyboardFrame;
     private MainKeyboardView mKeyboardView;
+    private boolean mFloatingHalvesActive = false;
     private EmojiPalettesView mEmojiPalettesView;
     private View mEmojiTabStripView;
     private LinearLayout mClipboardStripView;
@@ -150,11 +152,21 @@ public final class KeyboardSwitcher {
         return false;
     }
 
+    /** true if the current keyboard is laid out as two floating halves (and not e.g. emoji or clipboard) */
+    public boolean isFloatingHalvesActive() {
+        return mFloatingHalvesActive;
+    }
+
     public void loadKeyboard(EditorInfo editorInfo, SettingsValues settingsValues, int currentAutoCapsState,
                              @Nullable RecapitalizeMode currentRecapitalizeState, KeyboardLayoutSet.InternalAction internalAction) {
         KeyboardLayoutSet.Builder builder = new KeyboardLayoutSet.Builder(mThemeContext, editorInfo, settingsValues);
+        // for floating halves this is the size of the keys in a normal keyboard, the builder moves them into the panels
         int keyboardWidth = ResourceUtils.getKeyboardWidth(mThemeContext, settingsValues);
         int keyboardHeight = ResourceUtils.getKeyboardHeight(mThemeContext.getResources(), settingsValues);
+        if (settingsValues.mIsFloatingHalves) {
+            final View inputView = mCurrentInputView;
+            HalvesLayout.refreshMetrics(mThemeContext, inputView == null ? 0 : inputView.getWidth(), inputView == null ? 0 : inputView.getHeight());
+        }
         mKeyboardLayoutSet = builder.setKeyboardGeometry(keyboardWidth, keyboardHeight)
                 .setSubtype(mRichImm.getCurrentSubtype())
                 .setInternalAction(internalAction)
@@ -639,6 +651,9 @@ public final class KeyboardSwitcher {
             if (DEBUG_ACTION) {
                 Log.d(TAG, "setEmojiKeyboard");
             }
+            // emoji and clipboard are always shown as one normal docked keyboard
+            mFloatingHalvesActive = false;
+            mCurrentInputView.setFloatingHalvesActive(false);
             mMainKeyboardFrame.setVisibility(View.VISIBLE);
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
@@ -659,6 +674,9 @@ public final class KeyboardSwitcher {
             if (DEBUG_ACTION) {
                 Log.d(TAG, "setClipboardKeyboard");
             }
+            // emoji and clipboard are always shown as one normal docked keyboard
+            mFloatingHalvesActive = false;
+            mCurrentInputView.setFloatingHalvesActive(false);
             mMainKeyboardFrame.setVisibility(View.VISIBLE);
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
@@ -756,7 +774,10 @@ public final class KeyboardSwitcher {
             Keyboard oldKeyboard = keyboardView.getKeyboard();
             Keyboard newKeyboard = mKeyboardLayoutSet.getKeyboard(keyboardElement);
             keyboardView.setKeyboard(newKeyboard);
-            mCurrentInputView.setKeyboardTopPadding(newKeyboard.mTopPadding);
+            mFloatingHalvesActive = newKeyboard.mId.isFloatingHalves();
+            mCurrentInputView.setFloatingHalvesActive(mFloatingHalvesActive);
+            // the keyboard view covers the whole window in halves mode, so its top must not forward touches to the strip
+            mCurrentInputView.setKeyboardTopPadding(mFloatingHalvesActive ? 0 : newKeyboard.mTopPadding);
             keyboardView.setKeyPreviewPopupEnabled(currentSettingsValues.mKeyPreviewPopupOn);
             keyboardView.updateShortcutKey(mRichImm.isShortcutImeReady());
             boolean subtypeChanged = (oldKeyboard == null) || !newKeyboard.mId.getSubtype().equals(oldKeyboard.mId.getSubtype());

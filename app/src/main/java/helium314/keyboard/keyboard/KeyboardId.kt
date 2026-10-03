@@ -5,6 +5,7 @@
  */
 package helium314.keyboard.keyboard
 
+import helium314.keyboard.keyboard.internal.HalvesLayout
 import android.text.InputType
 import android.text.TextUtils
 import android.view.inputmethod.EditorInfo
@@ -37,7 +38,9 @@ data class KeyboardId(
     val isSplitLayout: Boolean,
     val oneHandedModeEnabled: Boolean,
     val internalAction: KeyboardLayoutSet.InternalAction?,
-    val emojiSearchAvailable: Boolean
+    val emojiSearchAvailable: Boolean,
+    /** 0 unless the keyboard is laid out as floating halves, then a key derived from the window size / halves layout (so the keyboard cache stays correct) */
+    val halvesKey: Int = 0,
 ) {
     lateinit var editorInfo: EditorInfo // we don't want it in the data class constructor
 
@@ -62,6 +65,8 @@ data class KeyboardId(
         params.settingsValues?.mOneHandedModeEnabled ?: false,
         params.internalAction,
         params.emojiSearchAvailable,
+        if (params.settingsValues?.mIsFloatingHalves == true && element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED)
+            HalvesLayout.cacheKey() else 0,
     ) {
         editorInfo = params.editorInfo
     }
@@ -75,6 +80,8 @@ data class KeyboardId(
         return (imeOptions and EditorInfo.IME_FLAG_NAVIGATE_PREVIOUS) != 0
             || imeAction == EditorInfo.IME_ACTION_PREVIOUS
     }
+
+    val isFloatingHalves get() = halvesKey != 0
 
     val isPasswordInput get() = InputTypeUtils.isAnyPasswordInputType(inputType)
 
