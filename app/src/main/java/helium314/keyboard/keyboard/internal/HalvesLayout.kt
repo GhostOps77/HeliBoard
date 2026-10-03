@@ -30,7 +30,7 @@ import kotlin.math.min
  * rest of the panel, shrunk by [innerPadding].
  *
  * Terms:
- *  - user rects ([userLeft], [userRight]): what the user chose, saved per orientation (as fractions of the window)
+ *  - user rects ([userLeft], [userRight]): what the user chose, saved per orientation, relative to the window and to the normal panel size
  *  - active rects ([left], [right]): what is currently shown. Same as the user rects, except in emoji mode.
  *  - built rects ([builtLeft], [builtRight]): the rects the current keyboard's keys were built for. They differ from the
  *    active rects only while a drag / resize is in progress, and are used to preview the keys at the new position.
@@ -67,8 +67,15 @@ object HalvesLayout {
     /** increased whenever the layout changes in a way that needs the keyboard to be rebuilt (part of the keyboard cache key) */
     @JvmField var version = 0
 
-    // layouts as fractions of the window: [orientation][left, right]; null if nothing saved and no default calculated yet
-    private val fractions = arrayOfNulls<Array<RectF>>(2)
+    // The layout is saved relative to the settings: for each half a position (left edge of the left half / right edge of the
+    // right half as a fraction of the window width, bottom as a fraction of the window height) and a size as a factor of the
+    // normal size of a half. The normal size comes from the keyboard height, key size, ... settings, so when those change
+    // the halves change too, instead of the keys being stretched to a panel size that was fixed on first use.
+    private class HalfState(var edge: Float, var bottom: Float, var widthFactor: Float, var heightFactor: Float)
+    private val states = arrayOfNulls<Array<HalfState>>(2)
+    // normal panel size (keyboard size from the current settings, plus handle and padding), set when building the keyboard
+    private var refPanelWidth = 0
+    private var refPanelHeight = 0
     private var loadedFromPrefs = booleanArrayOf(false, false)
 
     // ---- emoji mode: the emoji palette is one view, shown scaled in the space of the two panels ----
@@ -101,8 +108,8 @@ object HalvesLayout {
     /** gap between the emoji halves, relative to the emoji palette width (also used for the empty columns of the emoji grid) */
     private const val EMOJI_GAP_FRACTION = 0.05f
     // keys starting with "floating_pos" don't make Settings reload all values when written (see Settings.reloadOnChanged)
-    private const val PREF_RECTS_PORTRAIT = "floating_pos_halves_rects_portrait"
-    private const val PREF_RECTS_LANDSCAPE = "floating_pos_halves_rects_landscape"
+    private const val PREF_LAYOUT_PORTRAIT = "floating_pos_halves_layout_portrait"
+    private const val PREF_LAYOUT_LANDSCAPE = "floating_pos_halves_layout_landscape"
     private const val PREF_OPACITY = "floating_pos_halves_opacity"
     const val MIN_OPACITY = 0.3f // never completely transparent
     const val LEFT = 0
@@ -134,8 +141,8 @@ object HalvesLayout {
             opacityLoaded = true
             opacity = context.prefs().getFloat(PREF_OPACITY, 1f).coerceIn(MIN_OPACITY, 1f)
         }
-        if (!loadedFromPrefs[orientation]) loadFractions(context)
-        applyFractions()
+        if (!loadedFromPrefs[orientation]) loadStates(context)
+        applyStates()
     }
 
     /** [persist] only when the user is done (e.g. lifted the finger from the slider) */
@@ -152,70 +159,82 @@ object HalvesLayout {
 
     // ---- persistence ----
 
-    private fun prefKey() = if (landscape) PREF_RECTS_LANDSCAPE else PREF_RECTS_PORTRAIT
+    private fun prefKey() = if (landscape) PREF_LAYOUT_LANDSCAPE else PREF_LAYOUT_PORTRAIT
 
-    private fun loadFractions(context: Context) {
+    private fun loadStates(context: Context) {
         loadedFromPrefs[orientation] = true
-        val values = context.prefs().getString(prefKey(), null)?.split(',')?.mapNotNull { it.toFloatOrNull() }
-        if (values == null || values.size != 8 || values.any { it < 0f || it > 1f }) return
-        val l = RectF(values[0], values[1], values[2], values[3])
-        val r = RectF(values[4], values[5], values[6], values[7])
-        if (l.width() <= 0f || l.height() <= 0f || r.width() <= 0f || r.height() <= 0f) return
-        fractions[orientation] = arrayOf(l, r)
+        val v = context.prefs().getString(prefKey(), null)?.split(',')?.mapNotNull { it.toFloatOrNull() }
+        if (v == null || v.size != 8) return
+        if (listOf(v[0], v[1], v[4], v[5]).any { it < 0f || it > 1f } || listOf(v[2], v[3], v[6], v[7]).any { it <= 0f || it > 10f }) return
+        states[orientation] = arrayOf(HalfState(v[0], v[1], v[2], v[3]), HalfState(v[4], v[5], v[6], v[7]))
     }
 
-    private fun saveFractions(context: Context) {
-        val f = fractions[orientation] ?: return
-        val s = listOf(f[0].left, f[0].top, f[0].right, f[0].bottom, f[1].left, f[1].top, f[1].right, f[1].bottom).joinToString(",")
-        context.prefs().edit { putString(prefKey(), s) }
+    private fun saveStates(context: Context) {
+        val s = states[orientation] ?: return
+        val string = s.flatMap { listOf(it.edge, it.bottom, it.widthFactor, it.heightFactor) }.joinToString(",")
+        context.prefs().edit { putString(prefKey(), string) }
     }
 
     /** forget the saved layout of both orientations, defaults are used again with the next keyboard build */
     @JvmStatic
     fun resetSavedLayout(context: Context) {
         context.prefs().edit {
-            remove(PREF_RECTS_PORTRAIT)
-            remove(PREF_RECTS_LANDSCAPE)
+            remove(PREF_LAYOUT_PORTRAIT)
+            remove(PREF_LAYOUT_LANDSCAPE)
         }
-        fractions.fill(null)
+        states.fill(null)
         loadedFromPrefs.fill(true) // nothing there any more
         userLeft.setEmpty()
         userRight.setEmpty()
         version++
     }
 
-    private fun applyFractions() {
-        val f = fractions[orientation] ?: return
-        if (windowWidth <= 0 || windowHeight <= 0) return
-        userLeft.set(toPixels(f[0]))
-        userRight.set(toPixels(f[1]))
+    /** default: each half at its side of the window, bottom aligned, normal size */
+    private fun defaultStates(): Array<HalfState> {
+        val bottom = maxBottom() / windowHeight.toFloat()
+        return arrayOf(HalfState(0f, bottom, 1f, 1f), HalfState(1f, bottom, 1f, 1f))
+    }
+
+    /** calculate the user rects from the saved layout and the normal panel size */
+    private fun applyStates() {
+        val s = states[orientation] ?: return
+        if (windowWidth <= 0 || windowHeight <= 0 || refPanelWidth <= 0 || refPanelHeight <= 0) return
+        val leftWidth = (refPanelWidth * s[0].widthFactor).toInt()
+        val leftHeight = (refPanelHeight * s[0].heightFactor).toInt()
+        val leftX = (s[0].edge * windowWidth).toInt()
+        val leftBottom = (s[0].bottom * windowHeight).toInt()
+        userLeft.set(leftX, leftBottom - leftHeight, leftX + leftWidth, leftBottom)
+        val rightWidth = (refPanelWidth * s[1].widthFactor).toInt()
+        val rightHeight = (refPanelHeight * s[1].heightFactor).toInt()
+        val rightX = (s[1].edge * windowWidth).toInt()
+        val rightBottom = (s[1].bottom * windowHeight).toInt()
+        userRight.set(rightX - rightWidth, rightBottom - rightHeight, rightX, rightBottom)
         clampUserRects()
         updateActive()
     }
 
-    private fun toPixels(f: RectF) = Rect(
-        (f.left * windowWidth).toInt(), (f.top * windowHeight).toInt(),
-        (f.right * windowWidth).toInt(), (f.bottom * windowHeight).toInt()
-    )
-
-    private fun toFractions(r: Rect) = RectF(
-        r.left / windowWidth.toFloat(), r.top / windowHeight.toFloat(),
-        r.right / windowWidth.toFloat(), r.bottom / windowHeight.toFloat()
-    )
-
-    private fun storeFractions() {
-        fractions[orientation] = arrayOf(toFractions(userLeft), toFractions(userRight))
+    private fun storeStates() {
+        if (refPanelWidth <= 0 || refPanelHeight <= 0) return
+        fun state(r: Rect, edge: Int) = HalfState(
+            edge / windowWidth.toFloat(), r.bottom / windowHeight.toFloat(),
+            r.width() / refPanelWidth.toFloat(), r.height() / refPanelHeight.toFloat()
+        )
+        states[orientation] = arrayOf(state(userLeft, userLeft.left), state(userRight, userRight.right))
     }
 
     // ---- layout when building the keyboard ----
 
     /**
      * Called by the keyboard builder with the extents of the two key blocks of the normal keyboard
-     * ([designLeft], [designRight], in pixels) and the typical key size ([keyWidth], [keyHeight]).
-     * Calculates minimum panel sizes, uses default positions if nothing was saved, and clamps the layout.
+     * ([designLeft], [designRight], in pixels), the typical key size ([keyWidth], [keyHeight]) and the size of the key area
+     * of the normal keyboard ([baseWidth], [baseHeight], which depend on the user's keyboard height and size settings).
+     * Calculates the normal and minimum panel sizes, uses the default layout if nothing was saved, and clamps the layout.
      */
     @JvmStatic
-    fun layoutForBuild(designLeft: RectF, designRight: RectF, keyWidth: Float, keyHeight: Float) {
+    fun layoutForBuild(designLeft: RectF, designRight: RectF, keyWidth: Float, keyHeight: Float, baseWidth: Int, baseHeight: Int) {
+        refPanelWidth = baseWidth / 2 + 2 * innerPadding
+        refPanelHeight = baseHeight + handleHeight + 2 * innerPadding
+
         val minKey = MIN_KEY_SIZE_DP * density
         val scaleX = if (keyWidth > 0f) minKey / keyWidth else 1f
         val scaleY = if (keyHeight > 0f) minKey / keyHeight else 1f
@@ -225,17 +244,8 @@ object HalvesLayout {
         minWidthRight = min((designRight.width() * scaleX).toInt() + 2 * innerPadding, maxPanelWidth)
         minHeightPanel = min((designLeft.height() * scaleY).toInt() + handleHeight + 2 * innerPadding, maxBottom() - stripHeight)
 
-        if (fractions[orientation] == null) {
-            // defaults: each half at its side of the window, bottom aligned, with the size of the keys in a normal keyboard
-            val bottom = maxBottom()
-            val panelHeight = min(designLeft.height().toInt() + handleHeight + 2 * innerPadding, bottom - stripHeight)
-            val leftWidth = min(designLeft.width().toInt() + 2 * innerPadding, maxPanelWidth)
-            val rightWidth = min(designRight.width().toInt() + 2 * innerPadding, maxPanelWidth)
-            userLeft.set(0, bottom - panelHeight, leftWidth, bottom)
-            userRight.set(windowWidth - rightWidth, bottom - panelHeight, windowWidth, bottom)
-            storeFractions() // in memory only, saved once the user changes something
-        }
-        applyFractions()
+        if (states[orientation] == null) states[orientation] = defaultStates() // in memory only, saved once the user changes something
+        applyStates()
         builtLeft.set(userLeft)
         builtRight.set(userRight)
     }
@@ -254,22 +264,39 @@ object HalvesLayout {
     private fun clampUserRects() {
         clampPanel(userLeft, LEFT)
         clampPanel(userRight, RIGHT)
-        if (linked && userLeft.top != userRight.top) {
-            // both halves have the same top, they only move together vertically
-            userRight.offsetTo(userRight.left, userLeft.top)
+        if (linked && userLeft.bottom != userRight.bottom) {
+            // linked halves share their baseline
+            userRight.offset(0, userLeft.bottom - userRight.bottom)
             clampPanel(userRight, RIGHT)
-            if (userRight.top != userLeft.top) {
-                userLeft.offsetTo(userLeft.left, userRight.top)
-                clampPanel(userLeft, LEFT)
-            }
+        }
+        resolveOverlap()
+    }
+
+    /** the halves never overlap: the left half is always left of the right half, with at least a small gap */
+    private fun resolveOverlap() {
+        var over = userLeft.right + gap - userRight.left
+        if (over <= 0) return
+        val moveLeft = min(over, userLeft.left)
+        userLeft.offset(-moveLeft, 0)
+        over -= moveLeft
+        if (over > 0) {
+            val moveRight = min(over, windowWidth - userRight.right)
+            userRight.offset(moveRight, 0)
+            over -= moveRight
+        }
+        if (over > 0) { // both are at the window edges, so they need to get narrower
+            userLeft.right -= over / 2
+            userRight.left += over - over / 2
         }
     }
 
     /** bring [r] to a valid size (minimum key size, window) and move it into the window */
     private fun clampPanel(r: Rect, half: Int) {
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)
+        val otherMinW = if (half == LEFT) minWidthRight else minWidthLeft
+        val maxW = max(minW, windowWidth - gap - otherMinW) // leave space for the other half
         val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - stripHeight))
-        val w = r.width().coerceIn(minW, max(minW, windowWidth))
+        val w = r.width().coerceIn(minW, maxW)
         val h = r.height().coerceIn(minH, max(minH, maxBottom() - stripHeight))
         val x = r.left.coerceIn(0, max(0, windowWidth - w))
         val y = r.top.coerceIn(stripHeight, max(stripHeight, maxBottom() - h))
@@ -357,8 +384,12 @@ object HalvesLayout {
             return
         }
         if (!resize) {
+            // x range: inside the window, and never overlapping the other half
+            val minX = if (half == RIGHT) userLeft.right + gap else 0
+            val maxX = if (half == LEFT) min(windowWidth - startRect.width(), userRight.left - gap - startRect.width())
+                else windowWidth - startRect.width()
             r.offsetTo(
-                (startRect.left + dx).toInt().coerceIn(0, max(0, windowWidth - startRect.width())),
+                (startRect.left + dx).toInt().coerceIn(minX, max(minX, maxX)),
                 (startRect.top + dy).toInt().coerceIn(stripHeight, max(stripHeight, maxBottom() - startRect.height()))
             )
         } else {
@@ -375,8 +406,8 @@ object HalvesLayout {
     @JvmStatic
     fun endInteraction(context: Context) {
         clampUserRects()
-        storeFractions()
-        saveFractions(context)
+        storeStates()
+        saveStates(context)
         version++
         previewActive = false
         updateActive()
