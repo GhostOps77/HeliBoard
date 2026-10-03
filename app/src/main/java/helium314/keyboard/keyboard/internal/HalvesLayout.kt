@@ -80,8 +80,19 @@ object HalvesLayout {
     /** width of the empty columns in the middle of the emoji grid, as measured by the grid keyboard; <= 0 if unknown */
     @JvmField var emojiGapDesign = 0f
 
+    // ---- toolbar layout: "linked" = left handle moves both halves vertically, toolbar only above the right half ----
+    @JvmField var linked = false
+
+    // ---- opacity ----
+    @JvmField var opacity = 1f
+    private var opacityLoaded = false
+    /** the slider for the opacity, shown above the left half (where its toolbar would be) */
+    @JvmField val opacityBar = Rect()
+    @JvmField var opacityBarVisible = false
+
     // ---- interaction (drag / resize) ----
     private val startRect = Rect()
+    private val startRectOther = Rect()
     @JvmField var previewActive = false
     private val previewMatrixLeft = Matrix()
     private val previewMatrixRight = Matrix()
@@ -89,8 +100,11 @@ object HalvesLayout {
     private const val MIN_KEY_SIZE_DP = 44
     /** gap between the emoji halves, relative to the emoji palette width (also used for the empty columns of the emoji grid) */
     private const val EMOJI_GAP_FRACTION = 0.05f
-    private const val PREF_RECTS_PORTRAIT = "floating_halves_rects_portrait"
-    private const val PREF_RECTS_LANDSCAPE = "floating_halves_rects_landscape"
+    // keys starting with "floating_pos" don't make Settings reload all values when written (see Settings.reloadOnChanged)
+    private const val PREF_RECTS_PORTRAIT = "floating_pos_halves_rects_portrait"
+    private const val PREF_RECTS_LANDSCAPE = "floating_pos_halves_rects_landscape"
+    private const val PREF_OPACITY = "floating_pos_halves_opacity"
+    const val MIN_OPACITY = 0.3f // never completely transparent
     const val LEFT = 0
     const val RIGHT = 1
 
@@ -115,8 +129,20 @@ object HalvesLayout {
             else res.getDimensionPixelSize(R.dimen.config_suggestions_strip_height)
         windowWidth = if (viewWidth > 0) viewWidth else ResourceUtils.getDefaultKeyboardWidth(context)
         windowHeight = if (viewHeight > 0) viewHeight else res.displayMetrics.heightPixels - statusBarHeight(context)
+        linked = Settings.getValues().mFloatingHalvesLinked
+        if (!opacityLoaded) {
+            opacityLoaded = true
+            opacity = context.prefs().getFloat(PREF_OPACITY, 1f).coerceIn(MIN_OPACITY, 1f)
+        }
         if (!loadedFromPrefs[orientation]) loadFractions(context)
         applyFractions()
+    }
+
+    /** [persist] only when the user is done (e.g. lifted the finger from the slider) */
+    @JvmStatic
+    fun setOpacity(context: Context, value: Float, persist: Boolean) {
+        opacity = value.coerceIn(MIN_OPACITY, 1f)
+        if (persist) context.prefs().edit { putFloat(PREF_OPACITY, opacity) }
     }
 
     private fun statusBarHeight(context: Context): Int {
@@ -228,6 +254,15 @@ object HalvesLayout {
     private fun clampUserRects() {
         clampPanel(userLeft, LEFT)
         clampPanel(userRight, RIGHT)
+        if (linked && userLeft.top != userRight.top) {
+            // both halves have the same top, they only move together vertically
+            userRight.offsetTo(userRight.left, userLeft.top)
+            clampPanel(userRight, RIGHT)
+            if (userRight.top != userLeft.top) {
+                userLeft.offsetTo(userLeft.left, userRight.top)
+                clampPanel(userLeft, LEFT)
+            }
+        }
     }
 
     /** bring [r] to a valid size (minimum key size, window) and move it into the window */
@@ -258,7 +293,13 @@ object HalvesLayout {
     @JvmStatic
     fun updateStrip() {
         val top = min(left.top, right.top)
-        strip.set(min(left.left, right.left), top - stripHeight, max(left.right, right.right), top)
+        if (linked) // only above the right half
+            strip.set(right.left, right.top - stripHeight, right.right, right.top)
+        else
+            strip.set(min(left.left, right.left), top - stripHeight, max(left.right, right.right), top)
+        val barHeight = if (stripHeight > 0) stripHeight else (40 * density).toInt()
+        val barTop = max(0, left.top - barHeight)
+        opacityBar.set(left.left, barTop, left.right, left.top.coerceAtLeast(barTop))
     }
 
     /** the area that should receive touches, everything else goes to the app below */
@@ -268,6 +309,8 @@ object HalvesLayout {
         region.union(right)
         if (includeStrip && stripHeight > 0)
             region.union(strip)
+        if (opacityBarVisible)
+            region.union(opacityBar)
     }
 
     /** The key (hit) area of a panel: below the handle and inside the inner padding. */
@@ -286,6 +329,7 @@ object HalvesLayout {
     @JvmStatic
     fun beginInteraction(half: Int) {
         startRect.set(if (half == LEFT) userLeft else userRight)
+        startRectOther.set(if (half == LEFT) userRight else userLeft)
     }
 
     /**
@@ -299,6 +343,19 @@ object HalvesLayout {
         val r = Rect(startRect)
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)
         val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - stripHeight))
+        if (!resize && linked && half == LEFT) {
+            // linked: only vertical, and the right half moves along (without leaving the window either)
+            val minDy = max(stripHeight - startRect.top, stripHeight - startRectOther.top)
+            val maxDy = min(maxBottom() - startRect.bottom, maxBottom() - startRectOther.bottom)
+            val moveY = (if (maxDy < minDy) 0f else dy.coerceIn(minDy.toFloat(), maxDy.toFloat())).toInt()
+            userLeft.set(startRect)
+            userLeft.offset(0, moveY)
+            userRight.set(startRectOther)
+            userRight.offset(0, moveY)
+            updateActive()
+            previewActive = true
+            return
+        }
         if (!resize) {
             r.offsetTo(
                 (startRect.left + dx).toInt().coerceIn(0, max(0, windowWidth - startRect.width())),
