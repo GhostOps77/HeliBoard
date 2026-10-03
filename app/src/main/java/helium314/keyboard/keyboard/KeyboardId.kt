@@ -13,6 +13,7 @@ import helium314.keyboard.compat.EditorInfoCompatUtils.imeActionName
 import helium314.keyboard.latin.CapsMode
 import helium314.keyboard.latin.R
 import helium314.keyboard.latin.RichInputMethodSubtype
+import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.InputTypeUtils
 
 /**
@@ -65,7 +66,8 @@ data class KeyboardId(
         params.settingsValues?.mOneHandedModeEnabled ?: false,
         params.internalAction,
         params.emojiSearchAvailable,
-        if (params.settingsValues?.mIsFloatingHalves == true && element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED)
+        if (element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED && params.settingsValues?.mIsFloatingHalves == true
+            || element == KeyboardElement.EMOJI_BOTTOM_ROW && Settings.getValues().mIsFloatingHalves) // bottom row is built without settingsValues
             HalvesLayout.cacheKey() else 0,
     ) {
         editorInfo = params.editorInfo

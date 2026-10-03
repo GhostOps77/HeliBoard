@@ -13,6 +13,7 @@ import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Paint.Align;
 import android.graphics.PorterDuff;
@@ -28,6 +29,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import helium314.keyboard.keyboard.emoji.EmojiPageKeyboardView;
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.keyboard.internal.KeyDrawParams;
 import helium314.keyboard.keyboard.internal.KeyVisualAttributes;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
@@ -301,7 +303,16 @@ public class KeyboardView extends View {
             }
             // Draw all keys.
             for (final Key key : keyboard.getSortedKeys()) {
-                onDrawKey(key, canvas, paint);
+                final Matrix halfPreview = HalvesLayout.previewMatrixFor(key.getX() + key.getWidth() / 2f, key.getY() + key.getHeight() / 2f);
+                if (halfPreview == null) {
+                    onDrawKey(key, canvas, paint);
+                } else {
+                    // a floating half is being moved or resized, show its keys at the new position until the keyboard is rebuilt
+                    canvas.save();
+                    canvas.concat(halfPreview);
+                    onDrawKey(key, canvas, paint);
+                    canvas.restore();
+                }
             }
         } else {
             for (final Key key : mInvalidatedKeys) {
