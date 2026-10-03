@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package helium314.keyboard.settings.screens
 
+import android.widget.Toast
+import helium314.keyboard.keyboard.internal.HalvesLayout
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.layout.Column
@@ -72,6 +74,8 @@ fun AppearanceScreen(
         SettingsWithoutKey.BACKGROUND_IMAGE_LANDSCAPE,
         R.string.settings_category_miscellaneous,
         Settings.PREF_FLOATING_HALVES,
+        if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_DOCKED else null,
+        if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_RESET else null,
         Settings.PREF_ENABLE_SPLIT_KEYBOARD,
         if (prefs.getBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD_LANDSCAPE, Defaults.PREF_ENABLE_SPLIT_KEYBOARD)
             || prefs.getBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD, Defaults.PREF_ENABLE_SPLIT_KEYBOARD)
@@ -214,6 +218,17 @@ fun createAppearanceSettings(context: Context) = listOf(
     },
     Setting(context, Settings.PREF_FLOATING_HALVES, R.string.floating_halves, R.string.floating_halves_summary) {
         SwitchPreference(it, Defaults.PREF_FLOATING_HALVES) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+    },
+    Setting(context, Settings.PREF_FLOATING_HALVES_DOCKED, R.string.floating_halves_dock, R.string.floating_halves_dock_summary) {
+        SwitchPreference(it, Defaults.PREF_FLOATING_HALVES_DOCKED) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+    },
+    Setting(context, Settings.PREF_FLOATING_HALVES_RESET, R.string.floating_halves_reset, R.string.floating_halves_reset_summary) { setting ->
+        val ctx = LocalContext.current
+        Preference(name = setting.title, description = setting.description, onClick = {
+            HalvesLayout.resetSavedLayout(ctx)
+            KeyboardSwitcher.getInstance().setThemeNeedsReload()
+            Toast.makeText(ctx, R.string.floating_halves_reset_done, Toast.LENGTH_SHORT).show()
+        })
     },
     Setting(context, Settings.PREF_ENABLE_SPLIT_KEYBOARD, R.string.enable_split_keyboard) {
         var show by remember { mutableStateOf(false) }

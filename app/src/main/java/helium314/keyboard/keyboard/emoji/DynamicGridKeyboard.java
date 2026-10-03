@@ -11,6 +11,7 @@ import static helium314.keyboard.keyboard.internal.keyboard_parser.EmojiParserKt
 import android.content.SharedPreferences;
 import android.text.TextUtils;
 
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.common.Constants;
@@ -69,7 +70,8 @@ final class DynamicGridKeyboard extends Keyboard {
         final int paddingWidth = mOccupiedWidth - mBaseWidth;
         mBaseWidth = width - paddingWidth;
         mOccupiedWidth = width;
-        final float spacerWidth = Settings.getValues().mSplitKeyboardSpacerRelativeWidth * mBaseWidth;
+        final boolean floatingHalves = Settings.getValues().mIsFloatingHalves;
+        final float spacerWidth = (floatingHalves ? HalvesLayout.emojiSpacerRelativeWidth() : Settings.getValues().mSplitKeyboardSpacerRelativeWidth) * mBaseWidth;
         final Key key0 = getTemplateKey(Constants.RECENTS_TEMPLATE_KEY_CODE_0);
         final Key key1 = getTemplateKey(Constants.RECENTS_TEMPLATE_KEY_CODE_1);
         final int horizontalGap = Math.abs(key1.getX() - key0.getX()) - key0.getWidth();
@@ -80,6 +82,8 @@ final class DynamicGridKeyboard extends Keyboard {
         mColumnsNum = mBaseWidth / mHorizontalStep;
         if (spacerWidth > 0)
             setSpacerColumns(spacerWidth);
+        if (floatingHalves) // the panels are placed around the empty columns, see HalvesLayout.setEmojiMode
+            HalvesLayout.emojiGapDesign = mEmptyColumnIndices.size() * (float) mHorizontalStep;
         mMaxKeyCount = fixedRowCount? maxCount * getOccupiedColumnCount() : maxCount;
         mFixedRowCount = fixedRowCount;
         mIsRecents = isRecents;

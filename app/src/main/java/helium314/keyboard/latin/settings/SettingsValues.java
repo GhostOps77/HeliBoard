@@ -147,6 +147,8 @@ public class SettingsValues {
     public final boolean mIsFloatingKeyboard;
     /** two independent floating keyboard halves, mutually exclusive with {@link #mIsFloatingKeyboard} and one-handed mode */
     public final boolean mIsFloatingHalves;
+    /** the "floating split halves" setting is on (even if the halves are docked at the moment, see {@link #mIsFloatingHalves}) */
+    public final boolean mFloatingHalvesAvailable;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -291,8 +293,11 @@ public class SettingsValues {
         mClipboardHistoryRetentionTime = prefs.getInt(Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME, Defaults.PREF_CLIPBOARD_HISTORY_RETENTION_TIME);
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
-        mIsFloatingHalves = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
-        mIsFloatingKeyboard = !mIsLocked && !mIsFloatingHalves && SettingsKt.isFloatingKeyboardEnabled(context);
+        mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        // docked halves are just the normal keyboard
+        mIsFloatingHalves = mFloatingHalvesAvailable
+                && !prefs.getBoolean(Settings.PREF_FLOATING_HALVES_DOCKED, Defaults.PREF_FLOATING_HALVES_DOCKED);
+        mIsFloatingKeyboard = !mIsLocked && !mFloatingHalvesAvailable && SettingsKt.isFloatingKeyboardEnabled(context);
         mFloatingWidth = SettingsKt.readFloatingWidth(context);
         mFloatingHeight = mIsFloatingKeyboard && mHasHardwareKeyboard && prefs.getBoolean(Settings.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD, Defaults.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD)
                           ? 0 : SettingsKt.readFloatingHeight(context);
