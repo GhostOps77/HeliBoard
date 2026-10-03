@@ -1113,7 +1113,8 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public boolean onEvaluateFullscreenMode() {
-        if (isImeSuppressedByHardwareKeyboard() || mSettings.getCurrent().mIsFloatingKeyboard) {
+        if (isImeSuppressedByHardwareKeyboard() || mSettings.getCurrent().mIsFloatingKeyboard
+                || mSettings.getCurrent().mIsFloatingHalves) {
             // If there is a hardware keyboard or we're floating, disable full screen mode.
             return false;
         }
