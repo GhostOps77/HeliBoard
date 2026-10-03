@@ -104,7 +104,7 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
     }
 
     open fun build(): Keyboard {
-        if (mParams.mId.isFloatingHalves) {
+        if (mParams.mId.isFloatingHalves && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
             // two independent floating halves: split the rows like in split mode, then place both blocks in the window
             addSplit(HALVES_SPACER_RELATIVE_WIDTH)
             buildFloatingHalves()
@@ -113,6 +113,9 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         if (mParams.mId.isSplitLayout
                 && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
             addSplit(Settings.getValues().mSplitKeyboardSpacerRelativeWidth)
+        } else if (mParams.mId.isFloatingHalves && mParams.mId.element == KeyboardElement.EMOJI_BOTTOM_ROW) {
+            // the emoji palette is shown over the two halves, with a gap in the middle (see HalvesLayout.setEmojiMode)
+            addSplit(HalvesLayout.emojiSpacerRelativeWidth())
         }
         addKeysToParams()
         return Keyboard(mParams)
@@ -263,7 +266,8 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         )
         val leftBlock = blockOf(leftKeys)
         val rightBlock = blockOf(rightKeys)
-        HalvesLayout.layoutDefaults(leftBlock, rightBlock)
+        fun median(values: List<Float>) = values.sorted()[values.size / 2]
+        HalvesLayout.layoutForBuild(leftBlock, rightBlock, median(allKeys.map { it.mAbsoluteWidth }), median(allKeys.map { it.mAbsoluteHeight }))
 
         // map key block (design coordinates of the normal keyboard) to the key area of its panel
         fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
@@ -277,15 +281,18 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
                 key.mAbsoluteHeight *= sy
             }
         }
-        transform(leftKeys, leftBlock, HalvesLayout.left)
-        transform(rightKeys, rightBlock, HalvesLayout.right)
+        // not HalvesLayout.left / right: those are different while the emoji palette is shown, the keys must match the user's layout
+        val leftPanel = android.graphics.Rect(HalvesLayout.builtLeft)
+        val rightPanel = android.graphics.Rect(HalvesLayout.builtRight)
+        transform(leftKeys, leftBlock, leftPanel)
+        transform(rightKeys, rightBlock, rightPanel)
 
         // create keys; extend hit boxes of edge keys to the edge of their own panel, but never beyond it
         // (keys read mOccupiedWidth for their gap, so this must happen before it is changed to the window size)
         for ((rowIndex, row) in rows.withIndex()) {
             for (isLeft in booleanArrayOf(true, false)) {
                 val sideKeys = row.filter { (if (isLeft) leftKeys else rightKeys).contains(it) }
-                val panel = if (isLeft) HalvesLayout.left else HalvesLayout.right
+                val panel = if (isLeft) leftPanel else rightPanel
                 sideKeys.forEachIndexed { i, keyParams ->
                     val key = keyParams.createKey()
                     val hitBox = key.hitBox
