@@ -393,6 +393,16 @@ public final class KeyboardSwitcher {
         reloadKeyboard();
     }
 
+    /** toolbar key: show / hide the opacity slider of the floating halves */
+    public void toggleHalvesOpacityBar() {
+        if (mCurrentInputView == null) return;
+        if (!mFloatingHalvesActive) {
+            showToast(mLatinIME.getString(R.string.halves_opacity_unavailable), true);
+            return;
+        }
+        mCurrentInputView.toggleHalvesOpacityBar();
+    }
+
     public void toggleSplitKeyboardMode() {
         final Settings settings = Settings.getInstance();
         if (settings.getCurrent().mFloatingHalvesAvailable) {
