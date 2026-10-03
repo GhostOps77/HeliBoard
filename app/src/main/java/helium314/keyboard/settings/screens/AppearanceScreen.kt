@@ -71,6 +71,7 @@ fun AppearanceScreen(
         SettingsWithoutKey.BACKGROUND_IMAGE,
         SettingsWithoutKey.BACKGROUND_IMAGE_LANDSCAPE,
         R.string.settings_category_miscellaneous,
+        Settings.PREF_FLOATING_HALVES,
         Settings.PREF_ENABLE_SPLIT_KEYBOARD,
         if (prefs.getBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD_LANDSCAPE, Defaults.PREF_ENABLE_SPLIT_KEYBOARD)
             || prefs.getBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD, Defaults.PREF_ENABLE_SPLIT_KEYBOARD)
@@ -210,6 +211,9 @@ fun createAppearanceSettings(context: Context) = listOf(
         R.string.customize_background_image_landscape, R.string.summary_customize_background_image_landscape)
     {
         BackgroundImagePref(it, true)
+    },
+    Setting(context, Settings.PREF_FLOATING_HALVES, R.string.floating_halves, R.string.floating_halves_summary) {
+        SwitchPreference(it, Defaults.PREF_FLOATING_HALVES) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_ENABLE_SPLIT_KEYBOARD, R.string.enable_split_keyboard) {
         var show by remember { mutableStateOf(false) }
