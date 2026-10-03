@@ -85,6 +85,10 @@ object Defaults {
             "fr${Separators.SET}${ExtraValue.KEYBOARD_LAYOUT_SET}=MAIN:qwertz${Separators.SETS}" +
             "hu${Separators.SET}${ExtraValue.KEYBOARD_LAYOUT_SET}=MAIN:qwerty"
     const val PREF_ENABLE_SPLIT_KEYBOARD = false
+    const val PREF_FLOATING_HALVES = false
+    const val PREF_FLOATING_HALVES_DOCKED = false
+    const val PREF_OPACITY_EVERYWHERE = false
+    const val PREF_FLOATING_HALVES_STRIP = Settings.FLOATING_HALVES_STRIP_SINGLE
     @JvmField
     val PREF_SPLIT_SPACER_SCALE = Array(4) { DEFAULT_SIZE_SCALE }
     @JvmField

@@ -12,6 +12,7 @@ import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyData
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyLabel
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyType
+import helium314.keyboard.keyboard.internal.keyboard_parser.floris.PopupSet
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.SimplePopups
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.TextKeyData
 import helium314.keyboard.latin.common.isEmoji
@@ -60,7 +61,8 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
             KeyboardElement.CLIPBOARD_BOTTOM_ROW -> LayoutType.CLIPBOARD_BOTTOM
             else -> LayoutType.MAIN
         }
-        val baseKeys = LayoutParser.parseLayout(layoutType, params, context)
+        val baseKeys = if (layoutType == LayoutType.DPAD && params.mId.isFloatingHalves) floatingDpadKeys()
+            else LayoutParser.parseLayout(layoutType, params, context)
         val keysInRows = createRows(baseKeys)
         val heightRescale: Float
         if (params.mId.element.isBottomRow) {
@@ -90,6 +92,27 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
         return keysInRows
     }
 
+    /**
+     * D-pad for floating halves (the layout file is only used when docked): 3 rows of 5 equally wide keys, so the split is
+     * exactly between the 3rd and 4th key. The keys and their long-press popups are the same as in the docked d-pad.
+     * Left half: arrows in the middle of each side, the corners are line start, line end, shift and copy, the middle is select word.
+     * Right half: undo, redo, word left / right, paste and delete.
+     * The functional shift / delete keys are not added to this layout (see [parseLayout]), they are part of the grid.
+     */
+    private fun floatingDpadKeys(): MutableList<MutableList<KeyData>> {
+        fun k(label: String, popup: String? = null, function: Boolean = false): KeyData = TextKeyData(
+            type = if (function) KeyType.FUNCTION else null,
+            label = label,
+            width = 0.2f,
+            popup = if (popup == null) SimplePopups(null) else PopupSet(main = TextKeyData(label = popup)),
+        )
+        return mutableListOf(
+            mutableListOf(k("full_left", "page_start"), k("up"), k("full_right", "page_end"), k("undo", function = true), k("redo", function = true)),
+            mutableListOf(k("left"), k("select_word", "select_all", true), k("right"), k("word_left"), k("word_right")),
+            mutableListOf(k("shift"), k("down"), k("copy", "cut", true), k("paste", "clipboard", true), k("delete")),
+        )
+    }
+
     private fun createRows(baseKeys: MutableList<MutableList<KeyData>>): ArrayList<ArrayList<KeyParams>> {
         // add padding for number layouts in landscape mode (maybe do it some other way later)
         val element = params.mId.element
@@ -113,6 +136,8 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
             params.baseKeys = baseKeys.flatMap { row -> row.map { it.toKeyParams(params) } }
 
         val allFunctionalKeys = LayoutParser.parseLayout(LayoutType.FUNCTIONAL, params, context)
+        if (element == KeyboardElement.DPAD && params.mId.isFloatingHalves && allFunctionalKeys.size > 1)
+            allFunctionalKeys.subList(0, allFunctionalKeys.lastIndex).clear() // only the bottom row, delete is part of the d-pad
         adjustBottomFunctionalRowAndBaseKeys(allFunctionalKeys, baseKeys)
 
         if (allFunctionalKeys.none { it.singleOrNull()?.isKeyPlaceholder() == true })

@@ -145,6 +145,14 @@ public class SettingsValues {
     public final boolean mEmojiKeyFit;
     public final PunctuationSuggestions mPunctuationSuggestions;
     public final boolean mIsFloatingKeyboard;
+    /** two independent floating keyboard halves, mutually exclusive with {@link #mIsFloatingKeyboard} and one-handed mode */
+    public final boolean mIsFloatingHalves;
+    /** the "floating split halves" setting is on (even if the halves are docked at the moment, see {@link #mIsFloatingHalves}) */
+    public final boolean mFloatingHalvesAvailable;
+    /** halves are moved together vertically with the left handle, and the toolbar is only above the right half */
+    public final boolean mFloatingHalvesLinked;
+    /** the opacity toolbar key / slider works for all keyboard modes, not only for the floating halves */
+    public final boolean mOpacityEverywhere;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -289,12 +297,20 @@ public class SettingsValues {
         mClipboardHistoryRetentionTime = prefs.getInt(Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME, Defaults.PREF_CLIPBOARD_HISTORY_RETENTION_TIME);
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
-        mIsFloatingKeyboard = !mIsLocked && SettingsKt.isFloatingKeyboardEnabled(context);
+        // halves only exist where the "Enable split keyboard" setting says the keyboard is split
+        mFloatingHalvesAvailable = !mIsLocked && mIsSplitKeyboardEnabled && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        mOpacityEverywhere = prefs.getBoolean(Settings.PREF_OPACITY_EVERYWHERE, Defaults.PREF_OPACITY_EVERYWHERE);
+        mFloatingHalvesLinked = Settings.FLOATING_HALVES_STRIP_LINKED.equals(
+                prefs.getString(Settings.PREF_FLOATING_HALVES_STRIP, Defaults.PREF_FLOATING_HALVES_STRIP));
+        // docked halves are just the normal keyboard
+        mIsFloatingHalves = mFloatingHalvesAvailable
+                && !prefs.getBoolean(Settings.PREF_FLOATING_HALVES_DOCKED, Defaults.PREF_FLOATING_HALVES_DOCKED);
+        mIsFloatingKeyboard = !mIsLocked && !mFloatingHalvesAvailable && SettingsKt.isFloatingKeyboardEnabled(context);
         mFloatingWidth = SettingsKt.readFloatingWidth(context);
         mFloatingHeight = mIsFloatingKeyboard && mHasHardwareKeyboard && prefs.getBoolean(Settings.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD, Defaults.PREF_SHOW_ONLY_TOOLBAR_WITH_HARDWARE_KEYBOARD)
                           ? 0 : SettingsKt.readFloatingHeight(context);
         mKeyboardHeightScale = mIsFloatingKeyboard ? 1f : Settings.readHeightScale(prefs, isLandscape, isFolded);
-        mOneHandedModeEnabled = !mIsFloatingKeyboard && Settings.readOneHandedModeEnabled(prefs, isLandscape, mIsSplitKeyboardEnabled, isFolded);
+        mOneHandedModeEnabled = !mIsFloatingKeyboard && !mIsFloatingHalves && Settings.readOneHandedModeEnabled(prefs, isLandscape, mIsSplitKeyboardEnabled, isFolded);
         mOneHandedModeGravity = Settings.readOneHandedModeGravity(prefs, isLandscape, mIsSplitKeyboardEnabled, isFolded);
         if (mOneHandedModeEnabled) {
             final float baseScale = res.getFraction(R.fraction.config_one_handed_mode_width, 1, 1);

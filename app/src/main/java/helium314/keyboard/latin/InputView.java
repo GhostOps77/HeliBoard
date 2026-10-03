@@ -12,12 +12,15 @@ import android.graphics.Rect;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import androidx.core.view.ViewKt;
 
 import helium314.keyboard.accessibility.AccessibilityUtils;
 import helium314.keyboard.keyboard.MainKeyboardView;
+import helium314.keyboard.keyboard.KeyboardSwitcher;
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.latin.common.ColorType;
 import helium314.keyboard.latin.settings.Settings;
 import helium314.keyboard.latin.suggestions.MoreSuggestionsView;
@@ -106,8 +109,50 @@ public final class InputView extends FrameLayout {
         return mActiveForwarder.onTouchEvent(x, y, me);
     }
 
+    private boolean mFloatingHalvesActive = false;
+
+    /** show or hide the opacity slider of the floating halves (above the left half) */
+    public void toggleHalvesOpacityBar() {
+        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
+        frame.toggleOpacityBar();
+    }
+
+    public void hideHalvesOpacityBar() {
+        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
+        frame.setOpacityBarVisible(false);
+    }
+
+    /**
+     * Switch the main keyboard frame between normal layout and the floating halves layout.
+     * The input view already fills the whole IME window (see updateSoftInputWindowLayoutParameters).
+     */
+    public void setFloatingHalvesActive(final boolean active) {
+        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
+        mFloatingHalvesActive = active;
+        final ViewGroup.LayoutParams lp = frame.getLayoutParams();
+        final int height = active ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (lp.height != height) {
+            lp.height = height;
+            frame.setLayoutParams(lp);
+        }
+        frame.applyHalvesMode(active);
+    }
+
+    @Override
+    protected void onSizeChanged(final int w, final int h, final int oldw, final int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        // the keyboard is laid out for the size of this view, so it needs to be rebuilt if the real size differs from what was used
+        if (mFloatingHalvesActive && w > 0 && h > 0
+                && (w != HalvesLayout.windowWidth || h != HalvesLayout.windowHeight)) {
+            HalvesLayout.refreshMetrics(getContext(), w, h);
+            post(() -> KeyboardSwitcher.getInstance().reloadKeyboard());
+        }
+    }
+
     private Unit onNextLayout(View v) {
-        Settings.getValues().mColors.setBackground(findViewById(R.id.main_keyboard_frame), ColorType.MAIN_BACKGROUND);
+        if (!mFloatingHalvesActive) // in floating halves mode the frame stays transparent, the panels have the background
+            Settings.getValues().mColors.setBackground(findViewById(R.id.main_keyboard_frame), ColorType.MAIN_BACKGROUND);
+        ((KeyboardFrameLayout) findViewById(R.id.main_keyboard_frame)).applyOpacity();
 
         // Work around inset application being unreliable
         requestApplyInsets();

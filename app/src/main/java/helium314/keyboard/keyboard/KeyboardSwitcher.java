@@ -35,6 +35,7 @@ import androidx.annotation.Nullable;
 import helium314.keyboard.event.Event;
 import helium314.keyboard.keyboard.clipboard.ClipboardHistoryView;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.keyboard.internal.KeyboardState;
 import helium314.keyboard.keyboard.internal.LayoutDirective;
 import helium314.keyboard.keyboard.internal.ShiftMode;
@@ -68,8 +69,11 @@ public final class KeyboardSwitcher {
     private KeyboardWrapperView mKeyboardViewWrapper;
     private View mMainKeyboardFrame;
     private MainKeyboardView mKeyboardView;
+    private boolean mFloatingHalvesActive = false;
+    private boolean mEmojiHalvesPlaced = false;
     private EmojiPalettesView mEmojiPalettesView;
     private View mEmojiTabStripView;
+    private View mEmojiTabStrip;
     private LinearLayout mClipboardStripView;
     private HorizontalScrollView mClipboardStripScrollView;
     private SuggestionStripView mSuggestionStripView;
@@ -150,11 +154,70 @@ public final class KeyboardSwitcher {
         return false;
     }
 
+    /**
+     * With floating halves the emoji palette (a single view of normal keyboard size) is scaled and moved so it covers the two
+     * halves, the empty columns in the middle of its grid are in the gap. Without halves it is shown at its normal place.
+     */
+    private void applyEmojiHalvesPlacement(final boolean halves) {
+        final EmojiPalettesView emoji = mEmojiPalettesView;
+        if (emoji == null) return;
+        if (!halves && !mEmojiHalvesPlaced) return; // nothing to undo, and this is called whenever the keyboard layout changes
+        mEmojiHalvesPlaced = halves;
+        // with floating halves the category icons get a minimum size (the strip scrolls), docked they fill the width as usual
+        if (mEmojiTabStrip instanceof ViewGroup tabs) {
+            final int minTabWidth = halves ? (int) (44 * mThemeContext.getResources().getDisplayMetrics().density) : 0;
+            for (int i = 0; i < tabs.getChildCount(); i++)
+                tabs.getChildAt(i).setMinimumWidth(minTabWidth);
+        }
+        // the gaps of the emoji pages are measured when they are created, which can be after this: update the placement then
+        HalvesLayout.emojiListener = halves ? () -> {
+            if (mCurrentInputView == null) return;
+            mCurrentInputView.post(() -> {
+                if (!mEmojiHalvesPlaced) return;
+                applyEmojiHalvesPlacement(true);
+                mCurrentInputView.setFloatingHalvesActive(true);
+            });
+        } : null;
+        final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) emoji.getLayoutParams();
+        if (halves) {
+            final SettingsValues sv = Settings.getValues();
+            final int width = ResourceUtils.getKeyboardWidth(mThemeContext, sv) + emoji.getPaddingLeft() + emoji.getPaddingRight();
+            final int height = ResourceUtils.getSecondaryKeyboardHeight(mThemeContext.getResources(), sv)
+                    + emoji.getPaddingTop() + emoji.getPaddingBottom();
+            HalvesLayout.setEmojiMode(true, width, height);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            emoji.setPivotX(0f);
+            emoji.setPivotY(0f);
+            emoji.setScaleX(HalvesLayout.emojiScale);
+            emoji.setScaleY(HalvesLayout.emojiScale);
+            emoji.setTranslationX(HalvesLayout.emojiContent.left);
+            emoji.setTranslationY(HalvesLayout.emojiContent.top);
+        } else {
+            HalvesLayout.setEmojiMode(false, 0, 0);
+            lp.gravity = Gravity.BOTTOM;
+            emoji.setScaleX(1f);
+            emoji.setScaleY(1f);
+            emoji.setTranslationX(0f);
+            emoji.setTranslationY(0f);
+        }
+        emoji.setLayoutParams(lp);
+    }
+
+    /** true if the current keyboard is laid out as two floating halves (and not e.g. emoji or clipboard) */
+    public boolean isFloatingHalvesActive() {
+        return mFloatingHalvesActive;
+    }
+
     public void loadKeyboard(EditorInfo editorInfo, SettingsValues settingsValues, int currentAutoCapsState,
                              @Nullable RecapitalizeMode currentRecapitalizeState, KeyboardLayoutSet.InternalAction internalAction) {
         KeyboardLayoutSet.Builder builder = new KeyboardLayoutSet.Builder(mThemeContext, editorInfo, settingsValues);
+        // for floating halves this is the size of the keys in a normal keyboard, the builder moves them into the panels
         int keyboardWidth = ResourceUtils.getKeyboardWidth(mThemeContext, settingsValues);
         int keyboardHeight = ResourceUtils.getKeyboardHeight(mThemeContext.getResources(), settingsValues);
+        if (settingsValues.mIsFloatingHalves) {
+            final View inputView = mCurrentInputView;
+            HalvesLayout.refreshMetrics(mThemeContext, inputView == null ? 0 : inputView.getWidth(), inputView == null ? 0 : inputView.getHeight());
+        }
         mKeyboardLayoutSet = builder.setKeyboardGeometry(keyboardWidth, keyboardHeight)
                 .setSubtype(mRichImm.getCurrentSubtype())
                 .setInternalAction(internalAction)
@@ -183,6 +246,7 @@ public final class KeyboardSwitcher {
     }
 
     public void onHideWindow() {
+        if (mCurrentInputView != null) mCurrentInputView.hideHalvesOpacityBar();
         if (mKeyboardView != null) {
             mKeyboardView.onHideWindow();
         }
@@ -345,6 +409,33 @@ public final class KeyboardSwitcher {
         reloadKeyboard();
     }
 
+    /** toolbar key: show / hide the opacity slider of the floating halves */
+    public void toggleHalvesOpacityBar() {
+        if (mCurrentInputView == null) return;
+        if (!mFloatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
+            showToast(mLatinIME.getString(R.string.halves_opacity_unavailable), true);
+            return;
+        }
+        mCurrentInputView.toggleHalvesOpacityBar();
+    }
+
+    /** toolbar key: dock the floating halves into one normal keyboard, or release them again */
+    public void toggleHalvesDock() {
+        final Settings settings = Settings.getInstance();
+        if (!settings.getCurrent().mFloatingHalvesAvailable) {
+            showToast(mLatinIME.getString(R.string.halves_dock_unavailable), true);
+            return;
+        }
+        // mIsFloatingHalves is false while docked
+        settings.writeFloatingHalvesDocked(settings.getCurrent().mIsFloatingHalves);
+        reloadKeyboard();
+    }
+
+    /** the emoji palette's halves are being moved: put the palette where they are now */
+    public void updateEmojiHalvesPlacement() {
+        if (mEmojiHalvesPlaced) applyEmojiHalvesPlacement(true);
+    }
+
     public void toggleSplitKeyboardMode() {
         final Settings settings = Settings.getInstance();
         settings.writeSplitKeyboardEnabled(
@@ -497,8 +588,9 @@ public final class KeyboardSwitcher {
         return mKeyboardViewWrapper;
     }
 
+    /** the layout containing the category tabs (inside of the view that is shown / hidden and scrolls) */
     public View getEmojiTabStrip() {
-        return mEmojiTabStripView;
+        return mEmojiTabStrip;
     }
 
     public LinearLayout getClipboardStrip() {
@@ -561,7 +653,8 @@ public final class KeyboardSwitcher {
         mEmojiPalettesView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
         mClipboardHistoryView.setHardwareAcceleratedDrawingEnabled(isHardwareAcceleratedDrawingEnabled);
         mClipboardHistoryView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
-        mEmojiTabStripView = mCurrentInputView.findViewById(R.id.emoji_tab_strip);
+        mEmojiTabStripView = mCurrentInputView.findViewById(R.id.emoji_tab_strip_scroll_view);
+        mEmojiTabStrip = mCurrentInputView.findViewById(R.id.emoji_tab_strip);
         mClipboardStripView = mCurrentInputView.findViewById(R.id.clipboard_strip);
         mClipboardStripScrollView = mCurrentInputView.findViewById(R.id.clipboard_strip_scroll_view);
         mSuggestionStripView = mCurrentInputView.findViewById(R.id.suggestion_strip_view);
@@ -639,6 +732,8 @@ public final class KeyboardSwitcher {
             if (DEBUG_ACTION) {
                 Log.d(TAG, "setEmojiKeyboard");
             }
+            // with floating halves, the emoji palette is shown over the two halves (applied below, once the palette is set up)
+            mFloatingHalvesActive = Settings.getValues().mIsFloatingHalves;
             mMainKeyboardFrame.setVisibility(View.VISIBLE);
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
@@ -652,6 +747,8 @@ public final class KeyboardSwitcher {
             mEmojiPalettesView.startEmojiPalettes(mKeyboardView.getKeyVisualAttribute(),
                 mLatinIME.getCurrentInputEditorInfo(), mLatinIME.mKeyboardActionListener);
             mEmojiPalettesView.setVisibility(View.VISIBLE);
+            applyEmojiHalvesPlacement(mFloatingHalvesActive);
+            mCurrentInputView.setFloatingHalvesActive(mFloatingHalvesActive);
         }
 
         @Override
@@ -659,6 +756,10 @@ public final class KeyboardSwitcher {
             if (DEBUG_ACTION) {
                 Log.d(TAG, "setClipboardKeyboard");
             }
+            // emoji and clipboard are always shown as one normal docked keyboard
+            mFloatingHalvesActive = false;
+            applyEmojiHalvesPlacement(false);
+            mCurrentInputView.setFloatingHalvesActive(false);
             mMainKeyboardFrame.setVisibility(View.VISIBLE);
             // The visibility of {@link #mKeyboardView} must be aligned with {@link #MainKeyboardFrame}.
             // @see #getVisibleKeyboardView() and
@@ -756,7 +857,11 @@ public final class KeyboardSwitcher {
             Keyboard oldKeyboard = keyboardView.getKeyboard();
             Keyboard newKeyboard = mKeyboardLayoutSet.getKeyboard(keyboardElement);
             keyboardView.setKeyboard(newKeyboard);
-            mCurrentInputView.setKeyboardTopPadding(newKeyboard.mTopPadding);
+            mFloatingHalvesActive = newKeyboard.mId.isFloatingHalves();
+            applyEmojiHalvesPlacement(false); // not showing emoji any more (if we were)
+            mCurrentInputView.setFloatingHalvesActive(mFloatingHalvesActive);
+            // the keyboard view covers the whole window in halves mode, so its top must not forward touches to the strip
+            mCurrentInputView.setKeyboardTopPadding(mFloatingHalvesActive ? 0 : newKeyboard.mTopPadding);
             keyboardView.setKeyPreviewPopupEnabled(currentSettingsValues.mKeyPreviewPopupOn);
             keyboardView.updateShortcutKey(mRichImm.isShortcutImeReady());
             boolean subtypeChanged = (oldKeyboard == null) || !newKeyboard.mId.getSubtype().equals(oldKeyboard.mId.getSubtype());

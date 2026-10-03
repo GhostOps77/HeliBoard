@@ -33,6 +33,7 @@ import helium314.keyboard.compat.ConfigurationCompatKt;
 import helium314.keyboard.compat.EditorInfoCompatUtils;
 import helium314.keyboard.compat.ImeCompat;
 import helium314.keyboard.event.HapticEvent;
+import helium314.keyboard.keyboard.internal.HalvesLayout;
 import helium314.keyboard.keyboard.KeyboardActionListener;
 import helium314.keyboard.keyboard.KeyboardActionListenerImpl;
 import helium314.keyboard.keyboard.emoji.EmojiPalettesView;
@@ -1125,6 +1126,10 @@ public class LatinIME extends InputMethodService implements
             mInsetsUpdater.setInsets(outInsets);
             return;
         }
+        if (mKeyboardSwitcher.isFloatingHalvesActive() && visibleKeyboardView.isShown()) {
+            computeInsetsForFloatingHalves(outInsets);
+            return;
+        }
         final int stripHeight = mKeyboardSwitcher.isShowingStripContainer() ? mKeyboardSwitcher.getStripContainer().getHeight() : 0;
         int visibleTopY = inputHeight - visibleKeyboardView.getHeight() - stripHeight;
         if (Settings.getValues().mIsFloatingKeyboard)
@@ -1156,6 +1161,28 @@ public class LatinIME extends InputMethodService implements
 
         outInsets.contentTopInsets = visibleTopY;
         outInsets.visibleTopInsets = visibleTopY;
+        mInsetsUpdater.setInsets(outInsets);
+    }
+
+    /**
+     * Floating halves: the IME window covers the whole screen, but the app must neither be resized nor lose touches.
+     * So we report that no space is used (content and visible top insets are the full window height) and that only
+     * the region of the two halves (and the strip) is touchable. Everything else goes through to the app.
+     * This means apps with adjustResize don't move their text field up, the user moves the halves instead.
+     */
+    private void computeInsetsForFloatingHalves(final InputMethodService.Insets outInsets) {
+        final int windowHeight = mInputView.getHeight();
+        outInsets.contentTopInsets = windowHeight;
+        outInsets.visibleTopInsets = windowHeight;
+        if (hasSuggestionStripView())
+            mSuggestionStripView.setMoreSuggestionsHeight(HalvesLayout.strip.top);
+        outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
+        if (mKeyboardSwitcher.isShowingPopupKeysPanel() || (hasSuggestionStripView() && mSuggestionStripView.isShowingMoreSuggestionPanel())) {
+            // popups may extend outside of the halves, like in the normal keyboard (which uses the area above it)
+            outInsets.touchableRegion.set(0, 0, mInputView.getWidth(), windowHeight);
+        } else {
+            HalvesLayout.fillTouchableRegion(outInsets.touchableRegion, mKeyboardSwitcher.isShowingStripContainer());
+        }
         mInsetsUpdater.setInsets(outInsets);
     }
 
@@ -1192,7 +1219,8 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public boolean onEvaluateFullscreenMode() {
-        if (isImeSuppressedByHardwareKeyboard() || mSettings.getCurrent().mIsFloatingKeyboard) {
+        if (isImeSuppressedByHardwareKeyboard() || mSettings.getCurrent().mIsFloatingKeyboard
+                || mSettings.getCurrent().mIsFloatingHalves) {
             // If there is a hardware keyboard or we're floating, disable full screen mode.
             return false;
         }

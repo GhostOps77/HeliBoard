@@ -7,6 +7,7 @@ package helium314.keyboard.keyboard.internal
 
 import android.content.Context
 import android.content.res.Resources
+import android.graphics.RectF
 import android.util.Xml
 import androidx.annotation.XmlRes
 import helium314.keyboard.keyboard.Key
@@ -24,6 +25,8 @@ import helium314.keyboard.latin.define.DebugFlags
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.Log
 import helium314.keyboard.latin.utils.sumOf
+import java.util.Collections
+import java.util.IdentityHashMap
 import org.xmlpull.v1.XmlPullParser
 
 open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context, @JvmField val mParams: KP) {
@@ -101,9 +104,21 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
     }
 
     open fun build(): Keyboard {
+        if (mParams.mId.isFloatingHalves && mParams.mId.element.canBeFloatingHalves) {
+            // two independent floating halves: split the rows like in split mode, then place both blocks in the window
+            // same spacer as the docked keyboard has with the user's settings, so the keys get the same size
+            addSplit(HalvesLayout.splitSpacerRelativeWidth())
+            buildFloatingHalves()
+            return Keyboard(mParams)
+        }
         if (mParams.mId.isSplitLayout
                 && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
-            addSplit()
+            addSplit(Settings.getValues().mSplitKeyboardSpacerRelativeWidth)
+        } else if (mParams.mId.isFloatingHalves && mParams.mId.element == KeyboardElement.EMOJI_BOTTOM_ROW) {
+            // the emoji palette is shown over the two halves, with a gap in the middle (see HalvesLayout.setEmojiMode)
+            addSplit(HalvesLayout.emojiSpacerRelativeWidth())
+            // the emoji palette is placed around the gaps of its grid and of this bottom row (HalvesLayout.setEmojiMode)
+            HalvesLayout.publishEmojiBottomGap(keysInRows.flatten().filter { it.isSpacer }.maxOfOrNull { it.mAbsoluteWidth } ?: 0f)
         }
         addKeysToParams()
         return Keyboard(mParams)
@@ -125,8 +140,7 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         }
     }
 
-    private fun addSplit() {
-        val spacerRelativeWidth = Settings.getValues().mSplitKeyboardSpacerRelativeWidth
+    private fun addSplit(spacerRelativeWidth: Float) {
         // adjust gaps for the whole keyboard, so it's the same for all rows
         mParams.mRelativeHorizontalGap *= 1f / (1f + spacerRelativeWidth)
         mParams.mHorizontalGap = (mParams.mRelativeHorizontalGap * mParams.mId.width).toInt()
@@ -203,6 +217,105 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
             actionKey.mWidth -= widthToChange
             spaceKey.mWidth += widthToChange
         }
+    }
+
+    /**
+     * Floating halves: [addSplit] has already inserted a spacer into (nearly) every row.
+     * Here we separate the keys into a left and a right block, scale / move each block into the panel
+     * of [HalvesLayout], and create the keys. The keyboard then has the size of the whole window, so that
+     * both halves share one coordinate space (necessary for gesture typing and for the native proximity info).
+     */
+    private fun buildFloatingHalves() {
+        val spacers = keysInRows.flatMap { row -> row.filter { it.isSpacer } }
+        check(spacers.isNotEmpty()) { "can't split layout ${mParams.mId.element} into floating halves" }
+        val splitStart = spacers.map { it.xPos }.average().toFloat()
+        val splitEnd = splitStart + spacers.map { it.mAbsoluteWidth }.average().toFloat()
+        val splitCenter = (splitStart + splitEnd) / 2
+
+        val leftKeys = Collections.newSetFromMap(IdentityHashMap<KeyParams, Boolean>())
+        val rightKeys = Collections.newSetFromMap(IdentityHashMap<KeyParams, Boolean>())
+        val rows = ArrayList<ArrayList<KeyParams>>()
+        for (row in keysInRows) {
+            val newRow = ArrayList<KeyParams>()
+            val rowHasSpacer = row.any { it.isSpacer }
+            for (key in row) {
+                if (key.isSpacer) continue // spacers are not needed any more, the gap is part of the window layout
+                val start = key.xPos
+                val end = key.xPos + key.mAbsoluteWidth
+                if (!rowHasSpacer && start < splitCenter - 1f && end > splitCenter + 1f
+                        && splitStart - start > 1f && end - splitEnd > 1f) {
+                    // wide key (space bar) across the middle of a row without spacer: one copy for each half
+                    val l = KeyParams(key)
+                    val r = KeyParams(key)
+                    l.mAbsoluteWidth = splitStart - start
+                    r.xPos = splitEnd
+                    r.mAbsoluteWidth = end - splitEnd
+                    newRow.add(l); newRow.add(r)
+                    leftKeys.add(l); rightKeys.add(r)
+                } else {
+                    newRow.add(key)
+                    if ((start + end) / 2 < splitCenter) leftKeys.add(key) else rightKeys.add(key)
+                }
+            }
+            if (newRow.isNotEmpty()) rows.add(newRow)
+        }
+        check(leftKeys.isNotEmpty() && rightKeys.isNotEmpty()) { "can't split layout ${mParams.mId.element} into floating halves" }
+
+        val allKeys = rows.flatten()
+        val yMin = allKeys.minOf { it.yPos }
+        val yMax = allKeys.maxOf { it.yPos + it.mAbsoluteHeight }
+        fun blockOf(keys: Set<KeyParams>) = RectF(
+            keys.minOf { it.xPos }, yMin, keys.maxOf { it.xPos + it.mAbsoluteWidth }, yMax
+        )
+        val leftBlock = blockOf(leftKeys)
+        val rightBlock = blockOf(rightKeys)
+        HalvesLayout.layoutForBuild(
+            mParams.mBaseWidth, mParams.mBaseHeight, HalvesLayout.splitSpacerRelativeWidth(), mParams.mLeftPadding, mParams.mRightPadding,
+            leftBlock.width(), rightBlock.width(), leftBlock.height()
+        )
+
+        // map key block (design coordinates of the normal keyboard) to the key area of its panel
+        fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
+            val area = HalvesLayout.keyArea(panel)
+            // each block fills the width of its own panel: the blocks of the two halves are not equally wide (e.g. the right half of
+            // the letters has fewer keys in its widest row), and without this the narrower one leaves empty space at the panel edge
+            val sx = area.width() / block.width().coerceAtLeast(1f)
+            // height is relative to the docked key area (not to this block): with the default panel size, keys have the docked height
+            val sy = area.height() / HalvesLayout.refKeyAreaHeight.toFloat()
+            for (key in keys) {
+                key.xPos = area.left + (key.xPos - block.left) * sx
+                key.yPos = area.top + (key.yPos - block.top) * sy
+                key.mAbsoluteWidth *= sx
+                key.mAbsoluteHeight *= sy
+            }
+        }
+        // not HalvesLayout.left / right: those are different while the emoji palette is shown, the keys must match the user's layout
+        val leftPanel = android.graphics.Rect(HalvesLayout.builtLeft)
+        val rightPanel = android.graphics.Rect(HalvesLayout.builtRight)
+        transform(leftKeys, leftBlock, leftPanel)
+        transform(rightKeys, rightBlock, rightPanel)
+
+        // create keys; extend hit boxes of edge keys to the edge of their own panel, but never beyond it
+        // (keys read mOccupiedWidth for their gap, so this must happen before it is changed to the window size)
+        for ((rowIndex, row) in rows.withIndex()) {
+            for (isLeft in booleanArrayOf(true, false)) {
+                val sideKeys = row.filter { (if (isLeft) leftKeys else rightKeys).contains(it) }
+                val panel = if (isLeft) leftPanel else rightPanel
+                sideKeys.forEachIndexed { i, keyParams ->
+                    val key = keyParams.createKey()
+                    val hitBox = key.hitBox
+                    if (i == 0) hitBox.left = panel.left
+                    if (i == sideKeys.lastIndex) hitBox.right = panel.right
+                    if (rowIndex == 0) hitBox.top = panel.top + HalvesLayout.handleHeight
+                    if (rowIndex == rows.lastIndex) hitBox.bottom = panel.bottom
+                    mParams.onAddKey(key)
+                }
+            }
+        }
+        // the keyboard (and so the keyboard view) is as large as the window
+        mParams.mOccupiedWidth = HalvesLayout.windowWidth
+        mParams.mOccupiedHeight = HalvesLayout.windowHeight
+        endKeyboard()
     }
 
     private fun startKeyboard() {
