@@ -409,16 +409,6 @@ public final class KeyboardSwitcher {
         reloadKeyboard();
     }
 
-    /** toolbar key: show / hide the opacity slider of the floating halves */
-    public void toggleHalvesOpacityBar() {
-        if (mCurrentInputView == null) return;
-        if (!mFloatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
-            showToast(mLatinIME.getString(R.string.halves_opacity_unavailable), true);
-            return;
-        }
-        mCurrentInputView.toggleHalvesOpacityBar();
-    }
-
     /** toolbar key: dock the floating halves into one normal keyboard, or release them again */
     public void toggleHalvesDock() {
         final Settings settings = Settings.getInstance();
