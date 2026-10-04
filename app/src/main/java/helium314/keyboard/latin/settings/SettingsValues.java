@@ -360,6 +360,14 @@ public class SettingsValues {
         mPunctuationSuggestions = Settings.readPunctuationSuggestions(context);
     }
 
+    /**
+     * False for fields that don't want suggestions: terminals like Termux, password fields, fields without text input.
+     * Such fields often can't handle composing text (the text of a word that is still being typed).
+     */
+    public boolean fieldAllowsComposing() {
+        return mInputAttributes.mShouldShowSuggestions || mOverrideShowingSuggestions;
+    }
+
     public boolean needsToLookupSuggestions() {
         return (mInputAttributes.mShouldShowSuggestions || mOverrideShowingSuggestions)
                 && (mAutoCorrectEnabled || mSuggestionsEnabled);
