@@ -2274,7 +2274,13 @@ public final class InputLogic {
         }
         mWordComposer.setBatchInputWord(batchInputText);
         enterInlineEmojiSearchIfNeeded(batchInputText.codePointAt(0), settingsValues);
-        if (settingsValues.mDelaySwipeCommit) {
+        if (!settingsValues.fieldAllowsComposing()) {
+            // Fields that don't want suggestions (e.g. Termux, which has a text input type without suggestions) usually don't handle
+            // composing text: Termux only receives text that is committed, so a swiped word was not sent until another key was
+            // pressed, and not at all with enter. Typed letters are committed directly in such fields, so do the same here.
+            mConnection.commitText(batchInputText, 1);
+            resetComposingState(true);
+        } else if (settingsValues.mDelaySwipeCommit) {
             // The word is not committed yet, it stays composing text until space or the next gesture commits it (as before), and it
             // is highlighted so it is visible that it is still pending. It stays in the editor, so it is not lost if the
             // app is told to send the text without the keyboard being involved.
