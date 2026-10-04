@@ -50,7 +50,10 @@ object HalvesLayout {
     @JvmField var windowHeight = 0
     /** navigation bar overlap at the bottom of the window (only needed with edge-to-edge) */
     @JvmField var bottomInset = 0
+    /** height of the top row of both halves: drag handle (left half), toolbar and handle (right half), opacity slider */
     @JvmField var handleHeight = 0
+    /** width of the (fixed size) drag handle */
+    @JvmField var handleWidth = 0
     @JvmField var gripSize = 0
     @JvmField var stripHeight = 0
     @JvmField var innerPadding = 0
@@ -171,10 +174,11 @@ object HalvesLayout {
         stripHeight = if (Settings.getValues().mToolbarMode == ToolbarMode.HIDDEN) 0
             else res.getDimensionPixelSize(R.dimen.config_suggestions_strip_height)
         linked = Settings.getValues().mFloatingHalvesLinked
-        // The top area of a half has the drag handle. In linked mode the right half has the toolbar there instead, so
-        // both halves get an area as high as the toolbar (and their keys stay aligned).
+        // The top row of both halves is as high as the toolbar, which is in the top row of the right half (next to its drag handle).
+        // With both rows equal, the keys of the halves stay aligned.
         val normalHandleHeight = res.getDimensionPixelSize(R.dimen.config_floating_handle_height)
-        handleHeight = if (linked && stripHeight > 0) max(normalHandleHeight, stripHeight) else normalHandleHeight
+        handleHeight = if (stripHeight > 0) stripHeight else normalHandleHeight
+        handleWidth = (56 * density).toInt()
         windowWidth = if (viewWidth > 0) viewWidth else ResourceUtils.getDefaultKeyboardWidth(context)
         windowHeight = if (viewHeight > 0) viewHeight else res.displayMetrics.heightPixels - statusBarHeight(context)
         loadOpacity(context)
@@ -316,11 +320,8 @@ object HalvesLayout {
 
     private fun maxBottom() = windowHeight - bottomInset
 
-    /**
-     * The panels can't go higher than this: the toolbar needs space above them, except in linked mode where it is inside
-     * the top area of the right half.
-     */
-    private fun topLimit() = if (linked) 0 else stripHeight
+    /** The panels can go up to the top of the window: the toolbar is in the top row of the right half, not above it. */
+    private fun topLimit() = 0
 
     /** very rough layout, only used if the emoji palette is shown before any keyboard has been built */
     private fun ensureRects() {
@@ -389,14 +390,24 @@ object HalvesLayout {
 
     @JvmStatic
     fun updateStrip() {
-        val top = min(left.top, right.top)
-        if (linked) // inside the top area of the right half
-            strip.set(right.left, right.top, right.right, right.top + handleHeight)
-        else
-            strip.set(min(left.left, right.left), top - stripHeight, max(left.right, right.right), top)
-        val barHeight = if (stripHeight > 0) stripHeight else (40 * density).toInt()
-        val barTop = max(0, left.top - barHeight)
-        opacityBar.set(left.left, barTop, left.right, left.top.coerceAtLeast(barTop))
+        // top row of the right half: the drag handle at its left corner (not in linked mode, there the left handle moves both
+        // halves) and the toolbar next to it, which scrolls
+        val handleSpace = if (linked) 0 else min(handleWidth, right.width())
+        strip.set(right.left + handleSpace, right.top, right.right, right.top + handleHeight)
+        // the opacity slider replaces the drag handle of the left half, it gets the width of the top row of that half
+        opacityBar.set(left.left, left.top, left.right, left.top + handleHeight)
+    }
+
+    /** where the drag handle of [half] is (the left one is centered in the top row of the left half, the right one is in the corner) */
+    @JvmStatic
+    fun handleRect(half: Int, out: Rect) {
+        if (half == LEFT) {
+            val width = min(handleWidth, left.width())
+            val x = left.left + (left.width() - width) / 2
+            out.set(x, left.top, x + width, left.top + handleHeight)
+        } else {
+            out.set(right.left, right.top, right.left + min(handleWidth, right.width()), right.top + handleHeight)
+        }
     }
 
     /** the area that should receive touches, everything else goes to the app below */
