@@ -231,6 +231,7 @@ public final class KeyboardSwitcher {
     }
 
     public void onHideWindow() {
+        if (mCurrentInputView != null) mCurrentInputView.hideHalvesOpacityBar();
         if (mKeyboardView != null) {
             mKeyboardView.onHideWindow();
         }
@@ -396,21 +397,32 @@ public final class KeyboardSwitcher {
     /** toolbar key: show / hide the opacity slider of the floating halves */
     public void toggleHalvesOpacityBar() {
         if (mCurrentInputView == null) return;
-        if (!mFloatingHalvesActive) {
+        if (!mFloatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
             showToast(mLatinIME.getString(R.string.halves_opacity_unavailable), true);
             return;
         }
         mCurrentInputView.toggleHalvesOpacityBar();
     }
 
-    public void toggleSplitKeyboardMode() {
+    /** toolbar key: dock the floating halves into one normal keyboard, or release them again */
+    public void toggleHalvesDock() {
         final Settings settings = Settings.getInstance();
-        if (settings.getCurrent().mFloatingHalvesAvailable) {
-            // with floating halves the layout key docks them into one normal keyboard, or releases them again
-            settings.writeFloatingHalvesDocked(settings.getCurrent().mIsFloatingHalves);
-            reloadKeyboard();
+        if (!settings.getCurrent().mFloatingHalvesAvailable) {
+            showToast(mLatinIME.getString(R.string.halves_dock_unavailable), true);
             return;
         }
+        // mIsFloatingHalves is false while docked
+        settings.writeFloatingHalvesDocked(settings.getCurrent().mIsFloatingHalves);
+        reloadKeyboard();
+    }
+
+    /** the emoji palette's halves are being moved: put the palette where they are now */
+    public void updateEmojiHalvesPlacement() {
+        if (mEmojiHalvesPlaced) applyEmojiHalvesPlacement(true);
+    }
+
+    public void toggleSplitKeyboardMode() {
+        final Settings settings = Settings.getInstance();
         settings.writeSplitKeyboardEnabled(
             !settings.getCurrent().mIsSplitKeyboardEnabled,
             mCurrentOrientation == Configuration.ORIENTATION_LANDSCAPE,

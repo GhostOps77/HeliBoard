@@ -873,6 +873,9 @@ public final class InputLogic {
             case KeyCode.HALVES_OPACITY:
                 KeyboardSwitcher.getInstance().toggleHalvesOpacityBar();
                 break;
+            case KeyCode.HALVES_DOCK:
+                KeyboardSwitcher.getInstance().toggleHalvesDock();
+                break;
             case KeyCode.TIMESTAMP:
                 mLatinIME.onTextInput(TimestampKt.getTimestamp(mLatinIME));
                 break;

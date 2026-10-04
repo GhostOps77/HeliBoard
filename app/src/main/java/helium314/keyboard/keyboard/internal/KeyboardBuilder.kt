@@ -106,7 +106,8 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
     open fun build(): Keyboard {
         if (mParams.mId.isFloatingHalves && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
             // two independent floating halves: split the rows like in split mode, then place both blocks in the window
-            addSplit(HALVES_SPACER_RELATIVE_WIDTH)
+            // same spacer as the docked keyboard has with the user's settings, so the keys get the same size
+            addSplit(halvesSpacerRelativeWidth())
             buildFloatingHalves()
             return Keyboard(mParams)
         }
@@ -266,15 +267,14 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         )
         val leftBlock = blockOf(leftKeys)
         val rightBlock = blockOf(rightKeys)
-        fun median(values: List<Float>) = values.sorted()[values.size / 2]
-        HalvesLayout.layoutForBuild(leftBlock, rightBlock, median(allKeys.map { it.mAbsoluteWidth }), median(allKeys.map { it.mAbsoluteHeight }),
-            mParams.mBaseWidth, mParams.mBaseHeight)
+        HalvesLayout.layoutForBuild(mParams.mBaseWidth, mParams.mBaseHeight, halvesSpacerRelativeWidth(), mParams.mLeftPadding, mParams.mRightPadding)
 
         // map key block (design coordinates of the normal keyboard) to the key area of its panel
         fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
             val area = HalvesLayout.keyArea(panel)
-            val sx = area.width() / block.width()
-            val sy = area.height() / block.height()
+            // relative to the docked key area (not to this block): with the default panel size, keys have exactly the docked size
+            val sx = area.width() / HalvesLayout.refKeyAreaWidth.toFloat()
+            val sy = area.height() / HalvesLayout.refKeyAreaHeight.toFloat()
             for (key in keys) {
                 key.xPos = area.left + (key.xPos - block.left) * sx
                 key.yPos = area.top + (key.yPos - block.top) * sy
@@ -370,7 +370,9 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
 
     companion object {
         private const val TAG = "Keyboard.Builder"
-        // small spacer, so addSplit can be used to find the middle of every row; the actual gap is part of HalvesLayout
-        private const val HALVES_SPACER_RELATIVE_WIDTH = 0.02f
+        private fun halvesSpacerRelativeWidth(): Float {
+            val settings = Settings.getValues()
+            return if (settings.mIsSplitKeyboardEnabled) settings.mSplitKeyboardSpacerRelativeWidth else 0f
+        }
     }
 }
