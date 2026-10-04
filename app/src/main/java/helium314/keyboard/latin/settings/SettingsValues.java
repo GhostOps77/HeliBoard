@@ -153,6 +153,10 @@ public class SettingsValues {
     public final boolean mFloatingHalvesLinked;
     /** the opacity toolbar key / slider works for all keyboard modes, not only for the floating halves */
     public final boolean mOpacityEverywhere;
+    /** when a swiped word is committed: {@link Settings#SWIPE_COMMIT_IMMEDIATE}, _HIGHLIGHT or _HOLD */
+    public final String mSwipeCommitMode;
+    /** whether a swipe that starts in the middle of a word adds to that word, see {@link Settings#SWIPE_CONTINUES_TYPED} */
+    public final String mSwipeContinuesWord;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -299,7 +303,11 @@ public class SettingsValues {
 
         // halves only exist where the "Enable split keyboard" setting says the keyboard is split
         mFloatingHalvesAvailable = !mIsLocked && mIsSplitKeyboardEnabled && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
-        mOpacityEverywhere = prefs.getBoolean(Settings.PREF_OPACITY_EVERYWHERE, Defaults.PREF_OPACITY_EVERYWHERE);
+        mSwipeContinuesWord = prefs.getString(Settings.PREF_SWIPE_CONTINUES_WORD, Defaults.PREF_SWIPE_CONTINUES_WORD);
+        final String swipeCommitMode = prefs.getString(Settings.PREF_SWIPE_COMMIT_MODE, null);
+        mSwipeCommitMode = swipeCommitMode != null ? swipeCommitMode // migrate the old on / off setting
+                : prefs.getBoolean(Settings.PREF_DELAY_SWIPE_COMMIT, Defaults.PREF_DELAY_SWIPE_COMMIT)
+                    ? Settings.SWIPE_COMMIT_HIGHLIGHT : Settings.SWIPE_COMMIT_IMMEDIATE;
         mFloatingHalvesLinked = Settings.FLOATING_HALVES_STRIP_LINKED.equals(
                 prefs.getString(Settings.PREF_FLOATING_HALVES_STRIP, Defaults.PREF_FLOATING_HALVES_STRIP));
         // docked halves are just the normal keyboard
@@ -356,6 +364,38 @@ public class SettingsValues {
         mFontSizeMultiplierEmoji = prefs.getFloat(Settings.PREF_EMOJI_FONT_SCALE, Defaults.PREF_EMOJI_FONT_SCALE);
         mEmojiKeyFit = prefs.getBoolean(Settings.PREF_EMOJI_KEY_FIT, Defaults.PREF_EMOJI_KEY_FIT);
         mPunctuationSuggestions = Settings.readPunctuationSuggestions(context);
+    }
+
+    /**
+     * False for fields that don't want suggestions: terminals like Termux, password fields, fields without text input.
+     * Such fields often can't handle composing text (the text of a word that is still being typed).
+     */
+    public boolean fieldAllowsComposing() {
+        return mInputAttributes.mShouldShowSuggestions || mOverrideShowingSuggestions;
+    }
+
+    /**
+     * The swiped word is not put into the text field until space or the next swipe: it is only shown in the suggestion bar.
+     * This needs the suggestion bar, without it the word would not be visible.
+     */
+    public boolean holdsSwipedWord() {
+        return Settings.SWIPE_COMMIT_HOLD.equals(mSwipeCommitMode) && needsToLookupSuggestions() && mToolbarMode != ToolbarMode.HIDDEN;
+    }
+
+    /** The swiped word is highlighted in the text field until space or the next swipe (also if holding it is not possible). */
+    public boolean highlightsSwipedWord() {
+        return Settings.SWIPE_COMMIT_HIGHLIGHT.equals(mSwipeCommitMode)
+                || (Settings.SWIPE_COMMIT_HOLD.equals(mSwipeCommitMode) && !holdsSwipedWord());
+    }
+
+    /** a swipe adds to the word that is being typed (tap h, tap e, swipe l to o: hello) */
+    public boolean continuesTypedWord() {
+        return Settings.SWIPE_CONTINUES_TYPED.equals(mSwipeContinuesWord) || Settings.SWIPE_CONTINUES_TYPED_AND_SWIPED.equals(mSwipeContinuesWord);
+    }
+
+    /** a swipe also adds to a word that was swiped before (and is not finished with space) */
+    public boolean continuesSwipedWord() {
+        return Settings.SWIPE_CONTINUES_TYPED_AND_SWIPED.equals(mSwipeContinuesWord);
     }
 
     public boolean needsToLookupSuggestions() {
