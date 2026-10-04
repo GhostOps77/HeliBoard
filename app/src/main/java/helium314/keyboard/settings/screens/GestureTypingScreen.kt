@@ -47,6 +47,8 @@ fun GestureTypingScreen(
         if (gestureEnabled)
             Settings.PREF_GESTURE_SPACE_AWARE else null,
         if (gestureEnabled)
+            Settings.PREF_DELAY_SWIPE_COMMIT else null,
+        if (gestureEnabled)
             Settings.PREF_GESTURE_FAST_TYPING_COOLDOWN else null,
         if (gestureEnabled &&
             (prefs.getBoolean(Settings.PREF_GESTURE_PREVIEW_TRAIL, Defaults.PREF_GESTURE_PREVIEW_TRAIL) || gestureFloatingPreviewEnabled))
@@ -84,6 +86,9 @@ fun createGestureTypingSettings(context: Context) = listOf(
             ctx.prefs().edit { putBoolean(Settings.PREF_GESTURE_DYNAMIC_PREVIEW_FOLLOW_SYSTEM, followingSystem) }
             KeyboardSwitcher.getInstance().setThemeNeedsReload()
         }
+    },
+    Setting(context, Settings.PREF_DELAY_SWIPE_COMMIT, R.string.delay_swipe_commit, R.string.delay_swipe_commit_summary) {
+        SwitchPreference(it, Defaults.PREF_DELAY_SWIPE_COMMIT)
     },
     Setting(context, Settings.PREF_GESTURE_SPACE_AWARE, R.string.gesture_space_aware, R.string.gesture_space_aware_summary) {
         SwitchPreference(it, Defaults.PREF_GESTURE_SPACE_AWARE)
