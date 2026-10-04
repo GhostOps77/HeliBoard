@@ -122,6 +122,9 @@ object Defaults {
     const val PREF_SUGGEST_PUNCTUATION = false
     const val PREF_SUGGEST_CLIPBOARD_CONTENT = true
     const val PREF_GESTURE_INPUT = true
+    const val PREF_DELAY_SWIPE_COMMIT = false
+    const val PREF_SWIPE_COMMIT_MODE = Settings.SWIPE_COMMIT_IMMEDIATE
+    const val PREF_SWIPE_CONTINUES_WORD = Settings.SWIPE_CONTINUES_NEVER
     const val PREF_VIBRATION_DURATION_SETTINGS = -1
     const val PREF_KEYPRESS_SOUND_VOLUME = -0.01f
     const val PREF_KEY_LONGPRESS_TIMEOUT = 300

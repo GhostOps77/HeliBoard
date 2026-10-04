@@ -137,6 +137,15 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_PUNCTUATION_SUGGESTIONS = "punctuation_suggestions";
     public static final String PREF_SUGGEST_CLIPBOARD_CONTENT = "suggest_clipboard_content";
     public static final String PREF_GESTURE_INPUT = "gesture_input";
+    public static final String PREF_DELAY_SWIPE_COMMIT = "delay_swipe_commit"; // old on / off setting, only read to migrate
+    public static final String PREF_SWIPE_COMMIT_MODE = "swipe_commit_mode";
+    public static final String PREF_SWIPE_CONTINUES_WORD = "swipe_continues_word";
+    public static final String SWIPE_CONTINUES_NEVER = "never";
+    public static final String SWIPE_CONTINUES_TYPED = "typed";
+    public static final String SWIPE_CONTINUES_TYPED_AND_SWIPED = "typed_and_swiped";
+    public static final String SWIPE_COMMIT_IMMEDIATE = "immediate";
+    public static final String SWIPE_COMMIT_HIGHLIGHT = "highlight";
+    public static final String SWIPE_COMMIT_HOLD = "hold";
     public static final String PREF_VIBRATION_DURATION_SETTINGS = "vibration_duration_settings";
     public static final String PREF_KEYPRESS_SOUND_VOLUME = "keypress_sound_volume";
     public static final String PREF_KEY_LONGPRESS_TIMEOUT = "key_longpress_timeout";
