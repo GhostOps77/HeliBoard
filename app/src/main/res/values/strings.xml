@@ -73,9 +73,9 @@
     <string name="floating_halves_reset">Reset halves layout</string>
     <string name="floating_halves_reset_summary">Move both halves back to their default position and size, for portrait and landscape.</string>
     <string name="floating_halves_reset_done">Halves layout reset</string>
-    <string name="floating_halves_strip">Halves toolbar layout</string>
-    <string name="floating_halves_strip_single">One toolbar above both halves</string>
-    <string name="floating_halves_strip_linked">Linked height: move both halves with the handle on the left, toolbar above the right half</string>
+    <string name="floating_halves_strip">Halves layout</string>
+    <string name="floating_halves_strip_single">Independent halves: each half moves on its own, toolbar next to the handle of the right half</string>
+    <string name="floating_halves_strip_linked">Linked height: the handle on the left moves both halves up and down, toolbar in the right half</string>
     <string name="halves_opacity" tools:keep="@string/halves_opacity">Halves opacity</string>
     <string name="opacity_everywhere">Opacity slider in all keyboard modes</string>
     <string name="opacity_everywhere_summary">The opacity key in the toolbar also works for the normal docked keyboard. Off: only for the floating halves.</string>
