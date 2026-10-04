@@ -82,11 +82,11 @@
     <ImageView android:id="@+id/halves_handle_left" android:visibility="gone"
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:contentDescription="@string/floating_halves" android:scaleType="centerInside"
-        android:src="@drawable/ic_drag_indicator" />
+        android:src="@drawable/ic_drag_handle_h" />
     <ImageView android:id="@+id/halves_handle_right" android:visibility="gone"
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:contentDescription="@string/floating_halves" android:scaleType="centerInside"
-        android:src="@drawable/ic_drag_indicator" />
+        android:src="@drawable/ic_drag_handle_h" />
     <ImageView android:id="@+id/halves_grip_left" android:visibility="gone"
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:contentDescription="@string/floating_halves" android:scaleType="fitCenter"

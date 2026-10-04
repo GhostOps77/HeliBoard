@@ -57,6 +57,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     private lateinit var opacityBar: View
     private lateinit var opacitySeekBar: SeekBar
     private lateinit var opacityValue: TextView
+    private val tmpRect = Rect()
     private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight)
 
     private val panelOutline = object : ViewOutlineProvider() {
@@ -67,6 +68,13 @@ class KeyboardFrameLayout @JvmOverloads constructor(
 
     // The toolbar belongs to the keyboard: it has the rounded upper corners and square lower corners. In linked mode it is inside of
     // the top area of the right half, so toolbar and half look like one shape.
+    // upper right corner only: the left side of the toolbar is next to the drag handle of the right half
+    private val topRightRoundedOutline = object : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+            val r = HalvesLayout.cornerRadius
+            outline.setRoundRect(-r, 0, view.width, view.height + r, r.toFloat())
+        }
+    }
     private val topRoundedOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
             // the bottom corners are outside of the view, so they are cut off
@@ -130,7 +138,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     private fun opacityAvailable() = halvesMode || Settings.getValues().mOpacityEverywhere
 
     /**
-     * Show or hide the opacity slider. With floating halves it is above the left half (where a toolbar would be); in the normal
+     * Show or hide the opacity slider. With floating halves it replaces the drag handle of the left half; in the normal
      * keyboard (if opacity is enabled for all modes) it replaces the content of the toolbar / suggestion strip.
      */
     fun setOpacityBarVisible(visible: Boolean) {
@@ -144,6 +152,11 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         }
         HalvesLayout.opacityBarVisible = show && halvesMode // only used for the touchable region of the halves
         opacityBar.visibility = if (show) VISIBLE else GONE
+        // with floating halves the slider is in the place of the drag handle of the left half (and has its upper corners)
+        handleLeft.visibility = if (halvesMode && !show) VISIBLE else GONE
+        opacityBar.outlineProvider = if (halvesMode) topRoundedOutline else ViewOutlineProvider.BACKGROUND
+        opacityBar.clipToOutline = halvesMode
+        opacityBar.invalidateOutline()
         if (show) {
             val colors = Settings.getValues().mColors
             colors.setBackground(opacityBar, ColorType.STRIP_BACKGROUND)
@@ -246,10 +259,12 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         gripRight.visibility = visibility
         // linked: only the left handle moves the halves (both vertically), the right half has no handle
         handleRight.visibility = if (halvesMode && !HalvesLayout.linked) VISIBLE else GONE
-        strip.outlineProvider = if (halvesMode) topRoundedOutline else ViewOutlineProvider.BACKGROUND
+        // the opacity slider takes the place of the left handle while it is shown
+        handleLeft.visibility = if (halvesMode && opacityBar.visibility != VISIBLE) VISIBLE else GONE
+        strip.outlineProvider = if (!halvesMode) ViewOutlineProvider.BACKGROUND
+            else if (HalvesLayout.linked) topRoundedOutline else topRightRoundedOutline
         strip.clipToOutline = halvesMode
         strip.invalidateOutline()
-        if (opacityBar.visibility == VISIBLE) setOpacityBarVisible(false)
         applyOpacity()
         requestLayout()
     }
@@ -260,6 +275,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             return
         }
         halvesMode = enabled
+        if (opacityBar.visibility == VISIBLE) setOpacityBarVisible(false) // it belongs to the old layout
         halvesViews.forEach { it.visibility = if (enabled) VISIBLE else GONE }
         floatingHandleContainer.visibility = GONE
         if (enabled) {
@@ -295,8 +311,10 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             measureExactly(strip, HalvesLayout.strip.width(), HalvesLayout.strip.height())
         measureExactly(panelLeft, HalvesLayout.left.width(), HalvesLayout.left.height())
         measureExactly(panelRight, HalvesLayout.right.width(), HalvesLayout.right.height())
-        measureExactly(handleLeft, HalvesLayout.left.width(), HalvesLayout.handleHeight)
-        measureExactly(handleRight, HalvesLayout.right.width(), HalvesLayout.handleHeight)
+        HalvesLayout.handleRect(HalvesLayout.LEFT, tmpRect)
+        measureExactly(handleLeft, tmpRect.width(), tmpRect.height())
+        HalvesLayout.handleRect(HalvesLayout.RIGHT, tmpRect)
+        measureExactly(handleRight, tmpRect.width(), tmpRect.height())
         measureExactly(gripLeft, HalvesLayout.gripSize, HalvesLayout.gripSize)
         measureExactly(gripRight, HalvesLayout.gripSize, HalvesLayout.gripSize)
         if (opacityBar.visibility != GONE && opacityBar.parent === this)
@@ -315,8 +333,10 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         if (strip.visibility != GONE) strip.layout(HalvesLayout.strip)
         panelLeft.layout(HalvesLayout.left)
         panelRight.layout(HalvesLayout.right)
-        handleLeft.layout(HalvesLayout.left.left, HalvesLayout.left.top, HalvesLayout.left.right, HalvesLayout.left.top + HalvesLayout.handleHeight)
-        handleRight.layout(HalvesLayout.right.left, HalvesLayout.right.top, HalvesLayout.right.right, HalvesLayout.right.top + HalvesLayout.handleHeight)
+        HalvesLayout.handleRect(HalvesLayout.LEFT, tmpRect)
+        handleLeft.layout(tmpRect)
+        HalvesLayout.handleRect(HalvesLayout.RIGHT, tmpRect)
+        handleRight.layout(tmpRect)
         // outer bottom corners: bottom left for the left panel, bottom right for the right panel
         val grip = HalvesLayout.gripSize
         gripLeft.layout(HalvesLayout.left.left, HalvesLayout.left.bottom - grip, HalvesLayout.left.left + grip, HalvesLayout.left.bottom)
