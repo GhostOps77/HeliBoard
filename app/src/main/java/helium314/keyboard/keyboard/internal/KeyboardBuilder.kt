@@ -118,7 +118,7 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
             // the emoji palette is shown over the two halves, with a gap in the middle (see HalvesLayout.setEmojiMode)
             addSplit(HalvesLayout.emojiSpacerRelativeWidth())
             // the emoji palette is placed around the gaps of its grid and of this bottom row (HalvesLayout.setEmojiMode)
-            HalvesLayout.emojiBottomGapDesign = keysInRows.flatten().filter { it.isSpacer }.maxOfOrNull { it.mAbsoluteWidth } ?: 0f
+            HalvesLayout.publishEmojiBottomGap(keysInRows.flatten().filter { it.isSpacer }.maxOfOrNull { it.mAbsoluteWidth } ?: 0f)
         }
         addKeysToParams()
         return Keyboard(mParams)
