@@ -90,8 +90,9 @@ object HalvesLayout {
     @JvmField var emojiScale = 1f
     private var emojiDesignWidth = 0
     private var emojiDesignHeight = 0
-    /** width of the empty columns in the middle of the emoji grid, as measured by the grid keyboard; <= 0 if unknown */
-    @JvmField var emojiGapDesign = 0f
+    /** width of the empty columns in the middle of the emoji grid / of the gap in its bottom row (design pixels); < 0 if unknown */
+    @JvmField var emojiGapDesign = -1f
+    @JvmField var emojiBottomGapDesign = -1f
 
     // ---- toolbar layout: "linked" = left handle moves both halves vertically, toolbar only above the right half ----
     @JvmField var linked = false
@@ -114,7 +115,6 @@ object HalvesLayout {
 
     private const val MIN_KEY_SIZE_DP = 44
     /** gap between the emoji halves, relative to the emoji palette width (also used for the empty columns of the emoji grid) */
-    private const val EMOJI_GAP_FRACTION = 0.05f
     // keys starting with "floating_pos" don't make Settings reload all values when written (see Settings.reloadOnChanged)
     private const val PREF_LAYOUT_PORTRAIT = "floating_pos_halves_layout2_portrait"
     private const val PREF_LAYOUT_LANDSCAPE = "floating_pos_halves_layout2_landscape"
@@ -240,19 +240,29 @@ object HalvesLayout {
 
     // ---- layout when building the keyboard ----
 
+    private var refSettingsKey = 0
+
     /**
      * Called by the keyboard builder with the size of the key area of the normal keyboard ([baseWidth], [baseHeight]; they depend
-     * on the user's keyboard height, key size and gap settings), the width of the spacer in the middle of the rows
-     * ([splitSpacer], relative to the width; only the user's split keyboard setting, if enabled) and the side padding.
+     * on the user's keyboard height, key size and gap settings), the spacer in the middle of the rows ([splitSpacer], see
+     * [splitSpacerRelativeWidth]), the side padding, and the extents of the two key blocks as they are in the docked keyboard.
      *
-     * The normal size of a half is what the key area of a half has in the docked keyboard, so with the default layout the keys
-     * have exactly the size they have when docked. Everything here only depends on settings and window, not on the keyboard layout
-     * (letters, symbols, ...), so all layouts get the same panels. Calculates minimum panel sizes and clamps the layout.
+     * The normal size of a half is the key area the keys of a half need in the docked keyboard, so with the default layout the keys
+     * have exactly the docked size, and they never leave their panel. (The two blocks of a layout are not exactly equally wide:
+     * e.g. the shift key of the letters layout is on the left, so the left block is wider than the right one.) Both halves use the
+     * wider one, and the size doesn't shrink when switching to a layout with narrower blocks, so panels stay put.
+     * Calculates minimum panel sizes and clamps the layout.
      */
     @JvmStatic
-    fun layoutForBuild(baseWidth: Int, baseHeight: Int, splitSpacer: Float, leftPadding: Int, rightPadding: Int) {
-        refKeyAreaWidth = (baseWidth / (2f * (1f + splitSpacer))).toInt()
-        refKeyAreaHeight = baseHeight
+    fun layoutForBuild(baseWidth: Int, baseHeight: Int, splitSpacer: Float, leftPadding: Int, rightPadding: Int,
+                       leftBlockWidth: Float, rightBlockWidth: Float, blockHeight: Float) {
+        val settingsKey = 31 * (31 * baseWidth + baseHeight) + splitSpacer.hashCode()
+        val width = max(baseWidth / (2f * (1f + splitSpacer)), max(leftBlockWidth, rightBlockWidth)).toInt()
+        val height = max(baseHeight.toFloat(), blockHeight).toInt()
+        val sameSettings = settingsKey == refSettingsKey
+        refSettingsKey = settingsKey
+        refKeyAreaWidth = if (sameSettings) max(width, refKeyAreaWidth) else width
+        refKeyAreaHeight = if (sameSettings) max(height, refKeyAreaHeight) else height
         defaultLeftEdge = leftPadding
         defaultRightEdge = rightPadding
 
@@ -371,7 +381,18 @@ object HalvesLayout {
 
     /** part of the keyboard cache key, so a different window size or layout version results in a new keyboard */
     @JvmStatic
-    fun cacheKey(): Int = (31 * (31 * (31 * windowWidth + windowHeight) + bottomInset) + version) or 1
+    fun cacheKey(): Int =
+        (31 * (31 * (31 * (31 * windowWidth + windowHeight) + bottomInset) + version) + splitSpacerRelativeWidth().hashCode()) or 1
+
+    /**
+     * Width of the gap in the middle of the rows, relative to the keyboard width: the user's split keyboard setting
+     * (split enabled and "split distance"), exactly like in the docked keyboard. 0 if split is not enabled.
+     */
+    @JvmStatic
+    fun splitSpacerRelativeWidth(): Float {
+        val settings = Settings.getValues()
+        return if (settings.mIsSplitKeyboardEnabled) settings.mSplitKeyboardSpacerRelativeWidth else 0f
+    }
 
     // ---- drag and resize ----
 
@@ -485,7 +506,7 @@ object HalvesLayout {
     }
 
     @JvmStatic
-    fun emojiSpacerRelativeWidth() = EMOJI_GAP_FRACTION
+    fun emojiSpacerRelativeWidth() = splitSpacerRelativeWidth()
 
     private fun computeEmojiRects() {
         val pad = innerPadding
@@ -493,12 +514,17 @@ object HalvesLayout {
         val x0 = userLeft.left
         val x1 = userRight.right
         val availW = max(1, x1 - x0 - 2 * pad)
-        val availH = max(1, bottom - stripHeight - handleHeight - 2 * pad)
+        // not taller than the letters halves, the emoji palette is bigger than the letters keyboard when docked
+        val lettersKeyAreaHeight = max(userLeft.height(), userRight.height()) - handleHeight - 2 * pad
+        val availH = max(1, min(bottom - stripHeight - handleHeight - 2 * pad, lettersKeyAreaHeight))
         val s = min(availW / emojiDesignWidth.toFloat(), availH / emojiDesignHeight.toFloat())
         emojiScale = s
         val contentW = emojiDesignWidth * s
         val contentH = emojiDesignHeight * s
-        val gapDesign = if (emojiGapDesign > 0f) emojiGapDesign else emojiDesignWidth * EMOJI_GAP_FRACTION
+        // The gap between the panels must not have emojis or bottom row keys in it, so it is the smaller of the two gaps
+        val known = listOf(emojiGapDesign, emojiBottomGapDesign).filter { it >= 0f }
+        val spacer = splitSpacerRelativeWidth()
+        val gapDesign = if (known.isNotEmpty()) known.minOrNull()!! else emojiDesignWidth * spacer / (1f + spacer)
         val gapPx = gapDesign * s
         val startX = x0 + (x1 - x0 - contentW) / 2
         val contentTop = bottom - pad - contentH

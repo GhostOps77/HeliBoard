@@ -82,7 +82,7 @@ final class DynamicGridKeyboard extends Keyboard {
         mColumnsNum = mBaseWidth / mHorizontalStep;
         if (spacerWidth > 0)
             setSpacerColumns(spacerWidth);
-        if (floatingHalves) // the panels are placed around the empty columns, see HalvesLayout.setEmojiMode
+        if (floatingHalves) // the panels are placed around the empty columns (also if there are none), see HalvesLayout.setEmojiMode
             HalvesLayout.emojiGapDesign = mEmptyColumnIndices.size() * (float) mHorizontalStep;
         mMaxKeyCount = fixedRowCount? maxCount * getOccupiedColumnCount() : maxCount;
         mFixedRowCount = fixedRowCount;

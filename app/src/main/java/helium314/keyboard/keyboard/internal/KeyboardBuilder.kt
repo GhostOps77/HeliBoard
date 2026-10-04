@@ -107,7 +107,7 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         if (mParams.mId.isFloatingHalves && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
             // two independent floating halves: split the rows like in split mode, then place both blocks in the window
             // same spacer as the docked keyboard has with the user's settings, so the keys get the same size
-            addSplit(halvesSpacerRelativeWidth())
+            addSplit(HalvesLayout.splitSpacerRelativeWidth())
             buildFloatingHalves()
             return Keyboard(mParams)
         }
@@ -117,6 +117,8 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         } else if (mParams.mId.isFloatingHalves && mParams.mId.element == KeyboardElement.EMOJI_BOTTOM_ROW) {
             // the emoji palette is shown over the two halves, with a gap in the middle (see HalvesLayout.setEmojiMode)
             addSplit(HalvesLayout.emojiSpacerRelativeWidth())
+            // the emoji palette is placed around the gaps of its grid and of this bottom row (HalvesLayout.setEmojiMode)
+            HalvesLayout.emojiBottomGapDesign = keysInRows.flatten().filter { it.isSpacer }.maxOfOrNull { it.mAbsoluteWidth } ?: 0f
         }
         addKeysToParams()
         return Keyboard(mParams)
@@ -267,7 +269,10 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         )
         val leftBlock = blockOf(leftKeys)
         val rightBlock = blockOf(rightKeys)
-        HalvesLayout.layoutForBuild(mParams.mBaseWidth, mParams.mBaseHeight, halvesSpacerRelativeWidth(), mParams.mLeftPadding, mParams.mRightPadding)
+        HalvesLayout.layoutForBuild(
+            mParams.mBaseWidth, mParams.mBaseHeight, HalvesLayout.splitSpacerRelativeWidth(), mParams.mLeftPadding, mParams.mRightPadding,
+            leftBlock.width(), rightBlock.width(), leftBlock.height()
+        )
 
         // map key block (design coordinates of the normal keyboard) to the key area of its panel
         fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
@@ -370,9 +375,5 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
 
     companion object {
         private const val TAG = "Keyboard.Builder"
-        private fun halvesSpacerRelativeWidth(): Float {
-            val settings = Settings.getValues()
-            return if (settings.mIsSplitKeyboardEnabled) settings.mSplitKeyboardSpacerRelativeWidth else 0f
-        }
     }
 }

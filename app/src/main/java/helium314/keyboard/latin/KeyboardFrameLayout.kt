@@ -65,6 +65,20 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         }
     }
 
+    // The toolbar belongs to the keyboard: it has the rounded upper corners and square lower corners. With the toolbar above the
+    // right half only, the right half has square upper corners instead, so toolbar and half look like one shape.
+    private val topRoundedOutline = object : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+            // the bottom corners are outside of the view, so they are cut off
+            outline.setRoundRect(0, 0, view.width, view.height + HalvesLayout.cornerRadius, HalvesLayout.cornerRadius.toFloat())
+        }
+    }
+    private val bottomRoundedOutline = object : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+            outline.setRoundRect(0, -HalvesLayout.cornerRadius, view.width, view.height, HalvesLayout.cornerRadius.toFloat())
+        }
+    }
+
     override fun onFinishInflate() {
         super.onFinishInflate()
         strip = findViewById(R.id.strip_container)
@@ -237,6 +251,11 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         gripRight.visibility = visibility
         // linked: only the left handle moves the halves (both vertically), the right half has no handle
         handleRight.visibility = if (halvesMode && !HalvesLayout.linked) VISIBLE else GONE
+        panelRight.outlineProvider = if (HalvesLayout.linked) bottomRoundedOutline else panelOutline
+        panelRight.invalidateOutline()
+        strip.outlineProvider = if (halvesMode) topRoundedOutline else ViewOutlineProvider.BACKGROUND
+        strip.clipToOutline = halvesMode
+        strip.invalidateOutline()
         if (opacityBar.visibility == VISIBLE) setOpacityBarVisible(false)
         applyOpacity()
         requestLayout()
