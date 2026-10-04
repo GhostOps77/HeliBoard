@@ -6,6 +6,8 @@
 
 package helium314.keyboard.latin.inputlogic;
 
+import androidx.core.graphics.ColorUtils;
+import helium314.keyboard.latin.common.ColorType;
 import static helium314.keyboard.latin.common.SuggestionSpanUtilsKt.getTextWithSuggestionSpan;
 
 import android.graphics.Color;
@@ -2272,7 +2274,15 @@ public final class InputLogic {
         }
         mWordComposer.setBatchInputWord(batchInputText);
         enterInlineEmojiSearchIfNeeded(batchInputText.codePointAt(0), settingsValues);
-        setComposingTextInternal(batchInputText, 1);
+        if (settingsValues.mDelaySwipeCommit) {
+            // The word is not committed yet, it stays composing text until space or the next gesture commits it (as before), and it
+            // is highlighted so it is visible that it is still pending. It stays in the editor, so it is not lost if the
+            // app is told to send the text without the keyboard being involved.
+            final int highlight = ColorUtils.setAlphaComponent(settingsValues.mColors.get(ColorType.GESTURE_TRAIL), 0x60);
+            setComposingTextInternalWithBackgroundColor(batchInputText, 1, highlight, batchInputText.length());
+        } else {
+            setComposingTextInternal(batchInputText, 1);
+        }
         mConnection.endBatchEdit();
         // Space state must be updated before calling updateShiftState
         if (settingsValues.mAutospaceAfterGestureTyping)
