@@ -79,6 +79,8 @@
     <string name="halves_opacity" tools:keep="@string/halves_opacity">Halves opacity</string>
     <string name="opacity_everywhere">Opacity slider in all keyboard modes</string>
     <string name="opacity_everywhere_summary">The opacity key in the toolbar also works for the normal docked keyboard. Off: only for the floating halves.</string>
+    <string name="delay_swipe_commit">Delay swipe commit until space</string>
+    <string name="delay_swipe_commit_summary">A swiped word stays highlighted as pending, so you can still pick another suggestion. Pressing space or starting the next swipe commits it. Off: the swiped word is not highlighted.</string>
     <string name="halves_dock" tools:keep="@string/halves_dock">Dock / undock halves</string>
     <string name="halves_dock_unavailable">Turn on \"Floating split halves\" in the appearance settings first</string>
     <string name="halves_opacity_slider">Keyboard opacity</string>
