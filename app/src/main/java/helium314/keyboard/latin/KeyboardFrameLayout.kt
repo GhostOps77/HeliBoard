@@ -11,6 +11,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.content.res.ColorStateList
+import android.os.SystemClock
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -101,10 +104,36 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         })
     }
 
-    /** show or hide the opacity slider (above the left half) */
+    private var lastOpacityBarDismiss = 0L
+
+    /** toolbar key: show or hide the slider */
+    fun toggleOpacityBar() {
+        if (opacityBar.visibility == VISIBLE) {
+            setOpacityBarVisible(false)
+            return
+        }
+        // A touch outside of the slider hides it when the finger goes down, which is before a click on the toolbar key is
+        // completed. Without this check the key would hide the slider and then immediately show it again.
+        if (SystemClock.uptimeMillis() - lastOpacityBarDismiss < 600) return
+        setOpacityBarVisible(true)
+    }
+
+    private fun opacityAvailable() = halvesMode || Settings.getValues().mOpacityEverywhere
+
+    /**
+     * Show or hide the opacity slider. With floating halves it is above the left half (where a toolbar would be); in the normal
+     * keyboard (if opacity is enabled for all modes) it replaces the content of the toolbar / suggestion strip.
+     */
     fun setOpacityBarVisible(visible: Boolean) {
-        val show = visible && halvesMode
-        HalvesLayout.opacityBarVisible = show
+        HalvesLayout.loadOpacity(context)
+        val show = visible && opacityAvailable()
+        val parent: ViewGroup = if (halvesMode) this else strip as ViewGroup
+        if (opacityBar.parent !== parent) {
+            (opacityBar.parent as? ViewGroup)?.removeView(opacityBar)
+            if (parent === this) addView(opacityBar, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+            else parent.addView(opacityBar, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        }
+        HalvesLayout.opacityBarVisible = show && halvesMode // only used for the touchable region of the halves
         opacityBar.visibility = if (show) VISIBLE else GONE
         if (show) {
             val colors = Settings.getValues().mColors
@@ -115,16 +144,44 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             opacitySeekBar.progressTintList = ColorStateList.valueOf(textColor)
             opacitySeekBar.thumbTintList = ColorStateList.valueOf(textColor)
             opacitySeekBar.progress = ((HalvesLayout.opacity - HalvesLayout.MIN_OPACITY) * 100).toInt()
-            applyOpacity()
         }
+        applyOpacity()
         requestLayout() // also updates the touchable region
     }
 
-    /** the keyboard (panels, keys, handles and grips) is see-through, but never invisible; the toolbar stays fully opaque */
-    private fun applyOpacity() {
-        val alpha = if (halvesMode) HalvesLayout.opacity else 1f
-        listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = alpha }
+    /**
+     * The keyboard (panels / background, keys, handles and grips) is see-through, but never invisible. The toolbar stays opaque.
+     * Floating halves always use the saved opacity, the normal keyboard only if the opacity is enabled for all keyboard modes.
+     */
+    fun applyOpacity() {
+        HalvesLayout.loadOpacity(context)
+        val alpha = if (opacityAvailable()) HalvesLayout.opacity else 1f
+        if (halvesMode)
+            listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = alpha }
+        else {
+            listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = 1f }
+            wrapper.alpha = alpha
+            background?.mutate()?.alpha = (alpha * 255).toInt()
+        }
         opacityValue.text = "${(alpha * 100).toInt()}%"
+    }
+
+    /** a touch anywhere except on the slider hides it; the touch itself is handled as usual (e.g. a key press) */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (opacityBar.visibility == VISIBLE && (ev.actionMasked == MotionEvent.ACTION_DOWN || ev.actionMasked == MotionEvent.ACTION_POINTER_DOWN)) {
+            val frameLocation = IntArray(2)
+            val barLocation = IntArray(2)
+            getLocationOnScreen(frameLocation)
+            opacityBar.getLocationOnScreen(barLocation)
+            val x = frameLocation[0] + ev.getX(ev.actionIndex)
+            val y = frameLocation[1] + ev.getY(ev.actionIndex)
+            val inside = x >= barLocation[0] && x < barLocation[0] + opacityBar.width && y >= barLocation[1] && y < barLocation[1] + opacityBar.height
+            if (!inside) {
+                lastOpacityBarDismiss = SystemClock.uptimeMillis()
+                setOpacityBarVisible(false)
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     private var interactionStartX = 0f
@@ -138,7 +195,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     @SuppressLint("ClickableViewAccessibility")
     private fun setTouchHandling(view: View, half: Int, resize: Boolean) {
         view.setOnTouchListener { v, event ->
-            if (HalvesLayout.emojiMode) return@setOnTouchListener false // the emoji palette can't be moved, go back to letters first
+            // the emoji palette can only be moved vertically (both halves together), it can't be resized
+            if (HalvesLayout.emojiMode && resize) return@setOnTouchListener false
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     if (interacting) return@setOnTouchListener false // only one drag / resize at a time
@@ -154,7 +212,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
                     HalvesLayout.interact(half, resize, event.rawX - interactionStartX, event.rawY - interactionStartY)
                     // layout moves panels, handles, grips and strip, and also triggers an update of the touchable region
                     requestLayout()
-                    findViewById<MainKeyboardView>(R.id.keyboard_view)?.invalidateAllKeys()
+                    if (HalvesLayout.emojiMode) KeyboardSwitcher.getInstance().updateEmojiHalvesPlacement()
+                    else findViewById<MainKeyboardView>(R.id.keyboard_view)?.invalidateAllKeys()
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -178,7 +237,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         gripRight.visibility = visibility
         // linked: only the left handle moves the halves (both vertically), the right half has no handle
         handleRight.visibility = if (halvesMode && !HalvesLayout.linked) VISIBLE else GONE
-        if (!halvesMode) setOpacityBarVisible(false)
+        if (opacityBar.visibility == VISIBLE) setOpacityBarVisible(false)
         applyOpacity()
         requestLayout()
     }
@@ -228,7 +287,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         measureExactly(handleRight, HalvesLayout.right.width(), HalvesLayout.handleHeight)
         measureExactly(gripLeft, HalvesLayout.gripSize, HalvesLayout.gripSize)
         measureExactly(gripRight, HalvesLayout.gripSize, HalvesLayout.gripSize)
-        if (opacityBar.visibility != GONE)
+        if (opacityBar.visibility != GONE && opacityBar.parent === this)
             measureExactly(opacityBar, HalvesLayout.opacityBar.width(), HalvesLayout.opacityBar.height())
     }
 
@@ -250,7 +309,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val grip = HalvesLayout.gripSize
         gripLeft.layout(HalvesLayout.left.left, HalvesLayout.left.bottom - grip, HalvesLayout.left.left + grip, HalvesLayout.left.bottom)
         gripRight.layout(HalvesLayout.right.right - grip, HalvesLayout.right.bottom - grip, HalvesLayout.right.right, HalvesLayout.right.bottom)
-        if (opacityBar.visibility != GONE) opacityBar.layout(HalvesLayout.opacityBar)
+        if (opacityBar.visibility != GONE && opacityBar.parent === this) opacityBar.layout(HalvesLayout.opacityBar)
         floatingHandleContainer.layout(0, 0, 0, 0)
     }
 
@@ -261,7 +320,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int): Int {
         if (!halvesMode || !::strip.isInitialized) return drawingPosition
         // strip and opacity bar are drawn last (and get touches first), the other children keep their order
-        val last = intArrayOf(indexOfChild(strip), indexOfChild(opacityBar))
+        val last = listOf(indexOfChild(strip), indexOfChild(opacityBar)).filter { it >= 0 }
         val rest = (0 until childCount).filter { it !in last }
         return if (drawingPosition < rest.size) rest[drawingPosition] else last[drawingPosition - rest.size]
     }

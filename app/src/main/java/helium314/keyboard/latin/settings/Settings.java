@@ -110,6 +110,7 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_FLOATING_HALVES_DOCKED = "floating_halves_docked";
     public static final String PREF_FLOATING_HALVES_RESET = "floating_halves_reset";
     public static final String PREF_FLOATING_HALVES_STRIP = "floating_halves_strip";
+    public static final String PREF_OPACITY_EVERYWHERE = "opacity_everywhere";
     public static final String FLOATING_HALVES_STRIP_SINGLE = "single";
     public static final String FLOATING_HALVES_STRIP_LINKED = "linked";
     public static final String PREF_FLOATING_HEIGHT_PREFIX = "floating_height";
