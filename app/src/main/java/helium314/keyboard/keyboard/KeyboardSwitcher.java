@@ -73,6 +73,7 @@ public final class KeyboardSwitcher {
     private boolean mEmojiHalvesPlaced = false;
     private EmojiPalettesView mEmojiPalettesView;
     private View mEmojiTabStripView;
+    private View mEmojiTabStrip;
     private LinearLayout mClipboardStripView;
     private HorizontalScrollView mClipboardStripScrollView;
     private SuggestionStripView mSuggestionStripView;
@@ -162,6 +163,21 @@ public final class KeyboardSwitcher {
         if (emoji == null) return;
         if (!halves && !mEmojiHalvesPlaced) return; // nothing to undo, and this is called whenever the keyboard layout changes
         mEmojiHalvesPlaced = halves;
+        // with floating halves the category icons get a minimum size (the strip scrolls), docked they fill the width as usual
+        if (mEmojiTabStrip instanceof ViewGroup tabs) {
+            final int minTabWidth = halves ? (int) (44 * mThemeContext.getResources().getDisplayMetrics().density) : 0;
+            for (int i = 0; i < tabs.getChildCount(); i++)
+                tabs.getChildAt(i).setMinimumWidth(minTabWidth);
+        }
+        // the gaps of the emoji pages are measured when they are created, which can be after this: update the placement then
+        HalvesLayout.emojiListener = halves ? () -> {
+            if (mCurrentInputView == null) return;
+            mCurrentInputView.post(() -> {
+                if (!mEmojiHalvesPlaced) return;
+                applyEmojiHalvesPlacement(true);
+                mCurrentInputView.setFloatingHalvesActive(true);
+            });
+        } : null;
         final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) emoji.getLayoutParams();
         if (halves) {
             final SettingsValues sv = Settings.getValues();
@@ -572,8 +588,9 @@ public final class KeyboardSwitcher {
         return mKeyboardViewWrapper;
     }
 
+    /** the layout containing the category tabs (inside of the view that is shown / hidden and scrolls) */
     public View getEmojiTabStrip() {
-        return mEmojiTabStripView;
+        return mEmojiTabStrip;
     }
 
     public LinearLayout getClipboardStrip() {
@@ -636,7 +653,8 @@ public final class KeyboardSwitcher {
         mEmojiPalettesView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
         mClipboardHistoryView.setHardwareAcceleratedDrawingEnabled(isHardwareAcceleratedDrawingEnabled);
         mClipboardHistoryView.setKeyboardActionListener(mLatinIME.mKeyboardActionListener);
-        mEmojiTabStripView = mCurrentInputView.findViewById(R.id.emoji_tab_strip);
+        mEmojiTabStripView = mCurrentInputView.findViewById(R.id.emoji_tab_strip_scroll_view);
+        mEmojiTabStrip = mCurrentInputView.findViewById(R.id.emoji_tab_strip);
         mClipboardStripView = mCurrentInputView.findViewById(R.id.clipboard_strip);
         mClipboardStripScrollView = mCurrentInputView.findViewById(R.id.clipboard_strip_scroll_view);
         mSuggestionStripView = mCurrentInputView.findViewById(R.id.suggestion_strip_view);

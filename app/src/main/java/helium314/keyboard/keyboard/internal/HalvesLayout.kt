@@ -93,6 +93,35 @@ object HalvesLayout {
     /** width of the empty columns in the middle of the emoji grid / of the gap in its bottom row (design pixels); < 0 if unknown */
     @JvmField var emojiGapDesign = -1f
     @JvmField var emojiBottomGapDesign = -1f
+    /** called (on any thread) when the measured gaps of the emoji palette changed while it is shown over the halves */
+    @JvmField var emojiListener: Runnable? = null
+
+    @JvmStatic
+    fun publishEmojiGap(design: Float) {
+        if (emojiGapDesign == design) return
+        emojiGapDesign = design
+        if (emojiMode) emojiListener?.run()
+    }
+
+    @JvmStatic
+    fun publishEmojiBottomGap(design: Float) {
+        if (emojiBottomGapDesign == design) return
+        emojiBottomGapDesign = design
+        if (emojiMode) emojiListener?.run()
+    }
+
+    /**
+     * Width of the gap the emoji grid should have (in its own, unscaled pixels) so that it is as wide as the gap between the key
+     * areas of the letters halves once the palette is scaled. -1 if the layout of the halves is not known yet.
+     */
+    @JvmStatic
+    fun emojiGapTarget(designWidth: Int): Float {
+        if (userLeft.isEmpty || userRight.isEmpty || designWidth <= 0) return -1f
+        val keyAreaGap = (userRight.left + innerPadding) - (userLeft.right - innerPadding)
+        val span = userRight.right - userLeft.left - 2 * innerPadding
+        val scale = (span / designWidth.toFloat()).coerceIn(0.3f, 1.5f)
+        return max(0f, keyAreaGap / scale)
+    }
 
     // ---- toolbar layout: "linked" = left handle moves both halves vertically, toolbar only above the right half ----
     @JvmField var linked = false
@@ -135,16 +164,19 @@ object HalvesLayout {
         val res = context.resources
         density = res.displayMetrics.density
         landscape = res.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        handleHeight = res.getDimensionPixelSize(R.dimen.config_floating_handle_height)
         gripSize = (28 * density).toInt()
         innerPadding = (3 * density).toInt()
         cornerRadius = (12 * density).toInt()
         gap = (6 * density).toInt()
         stripHeight = if (Settings.getValues().mToolbarMode == ToolbarMode.HIDDEN) 0
             else res.getDimensionPixelSize(R.dimen.config_suggestions_strip_height)
+        linked = Settings.getValues().mFloatingHalvesLinked
+        // The top area of a half has the drag handle. In linked mode the right half has the toolbar there instead, so
+        // both halves get an area as high as the toolbar (and their keys stay aligned).
+        val normalHandleHeight = res.getDimensionPixelSize(R.dimen.config_floating_handle_height)
+        handleHeight = if (linked && stripHeight > 0) max(normalHandleHeight, stripHeight) else normalHandleHeight
         windowWidth = if (viewWidth > 0) viewWidth else ResourceUtils.getDefaultKeyboardWidth(context)
         windowHeight = if (viewHeight > 0) viewHeight else res.displayMetrics.heightPixels - statusBarHeight(context)
-        linked = Settings.getValues().mFloatingHalvesLinked
         loadOpacity(context)
         if (!loadedFromPrefs[orientation]) loadStates(context)
         applyStates()
@@ -275,7 +307,7 @@ object HalvesLayout {
         // on narrow screens both halves can't have keys of the minimum size, the panels are then limited to half of the screen
         minWidthLeft = min((refKeyAreaWidth * minFactorWidth).toInt() + 2 * innerPadding, maxPanelWidth)
         minWidthRight = minWidthLeft
-        minHeightPanel = min((refKeyAreaHeight * minFactorHeight).toInt() + handleHeight + 2 * innerPadding, maxBottom() - stripHeight)
+        minHeightPanel = min((refKeyAreaHeight * minFactorHeight).toInt() + handleHeight + 2 * innerPadding, maxBottom() - topLimit())
 
         applyStates()
         builtLeft.set(userLeft)
@@ -284,11 +316,17 @@ object HalvesLayout {
 
     private fun maxBottom() = windowHeight - bottomInset
 
+    /**
+     * The panels can't go higher than this: the toolbar needs space above them, except in linked mode where it is inside
+     * the top area of the right half.
+     */
+    private fun topLimit() = if (linked) 0 else stripHeight
+
     /** very rough layout, only used if the emoji palette is shown before any keyboard has been built */
     private fun ensureRects() {
         if (!userLeft.isEmpty && !userRight.isEmpty) return
         val bottom = maxBottom()
-        val height = (windowHeight * 0.4f).toInt().coerceAtMost(bottom - stripHeight)
+        val height = (windowHeight * 0.4f).toInt().coerceAtMost(bottom - topLimit())
         userLeft.set(0, bottom - height, windowWidth / 2 - gap / 2, bottom)
         userRight.set(windowWidth / 2 + gap / 2, bottom - height, windowWidth, bottom)
     }
@@ -327,11 +365,11 @@ object HalvesLayout {
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)
         val otherMinW = if (half == LEFT) minWidthRight else minWidthLeft
         val maxW = max(minW, windowWidth - gap - otherMinW) // leave space for the other half
-        val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - stripHeight))
+        val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - topLimit()))
         val w = r.width().coerceIn(minW, maxW)
-        val h = r.height().coerceIn(minH, max(minH, maxBottom() - stripHeight))
+        val h = r.height().coerceIn(minH, max(minH, maxBottom() - topLimit()))
         val x = r.left.coerceIn(0, max(0, windowWidth - w))
-        val y = r.top.coerceIn(stripHeight, max(stripHeight, maxBottom() - h))
+        val y = r.top.coerceIn(topLimit(), max(topLimit(), maxBottom() - h))
         r.set(x, y, x + w, y + h)
     }
 
@@ -352,8 +390,8 @@ object HalvesLayout {
     @JvmStatic
     fun updateStrip() {
         val top = min(left.top, right.top)
-        if (linked) // only above the right half
-            strip.set(right.left, right.top - stripHeight, right.right, right.top)
+        if (linked) // inside the top area of the right half
+            strip.set(right.left, right.top, right.right, right.top + handleHeight)
         else
             strip.set(min(left.left, right.left), top - stripHeight, max(left.right, right.right), top)
         val barHeight = if (stripHeight > 0) stripHeight else (40 * density).toInt()
@@ -382,7 +420,8 @@ object HalvesLayout {
     /** part of the keyboard cache key, so a different window size or layout version results in a new keyboard */
     @JvmStatic
     fun cacheKey(): Int =
-        (31 * (31 * (31 * (31 * windowWidth + windowHeight) + bottomInset) + version) + splitSpacerRelativeWidth().hashCode()) or 1
+        (31 * (31 * (31 * (31 * (31 * windowWidth + windowHeight) + bottomInset) + version) + splitSpacerRelativeWidth().hashCode())
+            + handleHeight) or 1 // the top area of the halves (drag handle / toolbar) is part of their layout
 
     /**
      * Width of the gap in the middle of the rows, relative to the keyboard width: the user's split keyboard setting
@@ -414,7 +453,7 @@ object HalvesLayout {
         if (emojiMode) {
             // emoji palette: only vertical, both halves together (its panels are derived from the layout of the letters)
             if (resize) return
-            val minDy = max(stripHeight - startActiveTop, max(stripHeight - startRect.top, stripHeight - startRectOther.top))
+            val minDy = max(topLimit() - startActiveTop, max(topLimit() - startRect.top, topLimit() - startRectOther.top))
             val maxDy = min(maxBottom() - startActiveBottom, min(maxBottom() - startRect.bottom, maxBottom() - startRectOther.bottom))
             val moveY = if (maxDy < minDy) 0 else dy.toInt().coerceIn(minDy, maxDy)
             val (startLeft, startRight) = if (half == LEFT) startRect to startRectOther else startRectOther to startRect
@@ -429,10 +468,10 @@ object HalvesLayout {
         val target = if (half == LEFT) userLeft else userRight
         val r = Rect(startRect)
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)
-        val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - stripHeight))
+        val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - topLimit()))
         if (!resize && linked && half == LEFT) {
             // linked: only vertical, and the right half moves along (without leaving the window either)
-            val minDy = max(stripHeight - startRect.top, stripHeight - startRectOther.top)
+            val minDy = max(topLimit() - startRect.top, topLimit() - startRectOther.top)
             val maxDy = min(maxBottom() - startRect.bottom, maxBottom() - startRectOther.bottom)
             val moveY = (if (maxDy < minDy) 0f else dy.coerceIn(minDy.toFloat(), maxDy.toFloat())).toInt()
             userLeft.set(startRect)
@@ -450,7 +489,7 @@ object HalvesLayout {
                 else windowWidth - startRect.width()
             r.offsetTo(
                 (startRect.left + dx).toInt().coerceIn(minX, max(minX, maxX)),
-                (startRect.top + dy).toInt().coerceIn(stripHeight, max(stripHeight, maxBottom() - startRect.height()))
+                (startRect.top + dy).toInt().coerceIn(topLimit(), max(topLimit(), maxBottom() - startRect.height()))
             )
         } else {
             r.bottom = (startRect.bottom + dy).toInt().coerceIn(min(startRect.top + minH, maxBottom()), maxBottom())
@@ -516,21 +555,22 @@ object HalvesLayout {
         val availW = max(1, x1 - x0 - 2 * pad)
         // not taller than the letters halves, the emoji palette is bigger than the letters keyboard when docked
         val lettersKeyAreaHeight = max(userLeft.height(), userRight.height()) - handleHeight - 2 * pad
-        val availH = max(1, min(bottom - stripHeight - handleHeight - 2 * pad, lettersKeyAreaHeight))
+        val availH = max(1, min(bottom - topLimit() - handleHeight - 2 * pad, lettersKeyAreaHeight))
         val s = min(availW / emojiDesignWidth.toFloat(), availH / emojiDesignHeight.toFloat())
         emojiScale = s
         val contentW = emojiDesignWidth * s
         val contentH = emojiDesignHeight * s
-        // The gap between the panels must not have emojis or bottom row keys in it, so it is the smaller of the two gaps
-        val known = listOf(emojiGapDesign, emojiBottomGapDesign).filter { it >= 0f }
-        val spacer = splitSpacerRelativeWidth()
-        val gapDesign = if (known.isNotEmpty()) known.minOrNull()!! else emojiDesignWidth * spacer / (1f + spacer)
-        val gapPx = gapDesign * s
-        val startX = x0 + (x1 - x0 - contentW) / 2
+        // The gap between the panels is the same as between the letters halves, unless the palette has emojis or keys in it
+        // (then it is as wide as the smaller gap of the grid and of the bottom row).
+        val lettersGap = max(0, userRight.left - userLeft.right).toFloat()
+        val gapPx = (listOf(emojiGapDesign, emojiBottomGapDesign).filter { it >= 0f }.map { it * s } + lettersGap).minOrNull()!!
+        val x0f = x0.toFloat()
+        val startX = (((userLeft.right + userRight.left) / 2f) - contentW / 2f).coerceIn(x0f, max(x0f, x1 - contentW))
+        val centerX = startX + contentW / 2f
         val contentTop = bottom - pad - contentH
         val panelTop = contentTop - handleHeight
         emojiContent.set(startX.toInt(), contentTop.toInt(), (startX + contentW).toInt(), (contentTop + contentH).toInt())
-        left.set((startX - pad).toInt(), panelTop.toInt(), (startX + (contentW - gapPx) / 2 + pad).toInt(), bottom)
-        right.set((startX + (contentW + gapPx) / 2 - pad).toInt(), panelTop.toInt(), (startX + contentW + pad).toInt(), bottom)
+        left.set((startX - pad).toInt(), panelTop.toInt(), (centerX - gapPx / 2).toInt(), bottom)
+        right.set((centerX + gapPx / 2).toInt(), panelTop.toInt(), (startX + contentW + pad).toInt(), bottom)
     }
 }

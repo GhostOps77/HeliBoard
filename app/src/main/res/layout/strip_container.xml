@@ -18,12 +18,20 @@
         android:layout_height="match_parent"
         android:gravity="center_vertical"
         style="?attr/suggestionStripViewStyle" />
-    <LinearLayout
-        android:id="@+id/emoji_tab_strip"
-        android:orientation="horizontal"
+    <!-- scrolls if the category icons need more space than there is, e.g. with floating halves, otherwise they fill the width -->
+    <HorizontalScrollView
+        android:id="@+id/emoji_tab_strip_scroll_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        style="?attr/suggestionStripViewStyle" />
+        android:fillViewport="true"
+        android:scrollbars="none"
+        style="?attr/suggestionStripViewStyle" >
+        <LinearLayout
+            android:id="@+id/emoji_tab_strip"
+            android:orientation="horizontal"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent" />
+    </HorizontalScrollView>
     <HorizontalScrollView
         android:id="@+id/clipboard_strip_scroll_view"
         android:layout_width="match_parent"

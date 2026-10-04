@@ -18,6 +18,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 
@@ -460,6 +461,10 @@ public final class EmojiPalettesView extends LinearLayout
                     Settings.getValues().mColors.setColor((ImageView) old, ColorType.EMOJI_CATEGORY);
                 if (current instanceof ImageView)
                     Settings.getValues().mColors.setColor((ImageView) current, ColorType.EMOJI_CATEGORY_SELECTED);
+                if (current != null && mTabStrip.getParent() instanceof HorizontalScrollView scrollView) {
+                    // the tab strip scrolls if it is too narrow for all tabs: keep the selected one visible
+                    scrollView.post(() -> scrollView.smoothScrollTo(current.getLeft() - (scrollView.getWidth() - current.getWidth()) / 2, 0));
+                }
             }
         }
     }

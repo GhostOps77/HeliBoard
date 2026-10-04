@@ -71,7 +71,7 @@ final class DynamicGridKeyboard extends Keyboard {
         mBaseWidth = width - paddingWidth;
         mOccupiedWidth = width;
         final boolean floatingHalves = Settings.getValues().mIsFloatingHalves;
-        final float spacerWidth = (floatingHalves ? HalvesLayout.emojiSpacerRelativeWidth() : Settings.getValues().mSplitKeyboardSpacerRelativeWidth) * mBaseWidth;
+        float spacerWidth = floatingHalves ? -1f : Settings.getValues().mSplitKeyboardSpacerRelativeWidth * mBaseWidth;
         final Key key0 = getTemplateKey(Constants.RECENTS_TEMPLATE_KEY_CODE_0);
         final Key key1 = getTemplateKey(Constants.RECENTS_TEMPLATE_KEY_CODE_1);
         final int horizontalGap = Math.abs(key1.getX() - key0.getX()) - key0.getWidth();
@@ -80,10 +80,17 @@ final class DynamicGridKeyboard extends Keyboard {
         mHorizontalStep = (int) ((key0.getWidth() + horizontalGap) * widthScale);
         mVerticalStep = (int) ((key0.getHeight() + mVerticalGap) / Math.sqrt(Settings.getValues().mKeyboardHeightScale));
         mColumnsNum = mBaseWidth / mHorizontalStep;
+        if (floatingHalves) {
+            // the gap should be as wide as the gap between the letters halves (without split distance it is 0 there too).
+            // Whole columns are empty, so the grid gap is made one column wider to never be narrower than that.
+            final float target = HalvesLayout.emojiGapTarget(width);
+            spacerWidth = target < 0 ? Settings.getValues().mSplitKeyboardSpacerRelativeWidth * mBaseWidth
+                    : (target <= 1f ? 0f : target + mHorizontalStep);
+        }
         if (spacerWidth > 0)
             setSpacerColumns(spacerWidth);
         if (floatingHalves) // the panels are placed around the empty columns (also if there are none), see HalvesLayout.setEmojiMode
-            HalvesLayout.emojiGapDesign = mEmptyColumnIndices.size() * (float) mHorizontalStep;
+            HalvesLayout.publishEmojiGap(mEmptyColumnIndices.size() * (float) mHorizontalStep);
         mMaxKeyCount = fixedRowCount? maxCount * getOccupiedColumnCount() : maxCount;
         mFixedRowCount = fixedRowCount;
         mIsRecents = isRecents;
