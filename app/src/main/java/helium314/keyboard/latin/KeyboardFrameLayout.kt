@@ -172,7 +172,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     }
 
     /**
-     * The keyboard (panels / background, keys, handles and grips) is see-through, but never invisible. The toolbar stays opaque.
+     * The keyboard (panels / background, keys, handles and grips) and the toolbar / suggestion / emoji category strip are
+     * see-through, but never invisible.
      * Floating halves always use the saved opacity, the normal keyboard only if the opacity is enabled for all keyboard modes.
      */
     fun applyOpacity() {
@@ -184,6 +185,14 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = 1f }
             wrapper.alpha = alpha
             background?.mutate()?.alpha = (alpha * 255).toInt()
+        }
+        // The toolbar, suggestions, emoji categories and clipboard strip are in the strip container: fade each of its views.
+        // (Not the container itself, because with the normal keyboard the opacity slider is inside of it and must stay readable.)
+        (strip as? ViewGroup)?.let { container ->
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                child.alpha = if (child === opacityBar) 1f else alpha
+            }
         }
         opacityValue.text = "${(alpha * 100).toInt()}%"
     }
