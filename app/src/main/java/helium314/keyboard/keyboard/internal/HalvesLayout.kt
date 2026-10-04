@@ -73,9 +73,15 @@ object HalvesLayout {
     // the halves change too, instead of the keys being stretched to a panel size that was fixed on first use.
     private class HalfState(var edge: Float, var bottom: Float, var widthFactor: Float, var heightFactor: Float)
     private val states = arrayOfNulls<Array<HalfState>>(2)
-    // normal panel size (keyboard size from the current settings, plus handle and padding), set when building the keyboard
-    private var refPanelWidth = 0
-    private var refPanelHeight = 0
+    // Normal size of the key area of a half = exactly the size the keys of the docked keyboard have with the user's settings
+    // (keyboard height, key size, gaps, split spacer, ...), set when building the keyboard. Keys are scaled relative to it.
+    @JvmField var refKeyAreaWidth = 0
+    @JvmField var refKeyAreaHeight = 0
+    private val refPanelWidth get() = refKeyAreaWidth + 2 * innerPadding
+    private val refPanelHeight get() = refKeyAreaHeight + handleHeight + 2 * innerPadding
+    // default distance of the halves to the window edges (side padding setting)
+    private var defaultLeftEdge = 0
+    private var defaultRightEdge = 0
     private var loadedFromPrefs = booleanArrayOf(false, false)
 
     // ---- emoji mode: the emoji palette is one view, shown scaled in the space of the two panels ----
@@ -100,6 +106,8 @@ object HalvesLayout {
     // ---- interaction (drag / resize) ----
     private val startRect = Rect()
     private val startRectOther = Rect()
+    private var startActiveTop = 0
+    private var startActiveBottom = 0
     @JvmField var previewActive = false
     private val previewMatrixLeft = Matrix()
     private val previewMatrixRight = Matrix()
@@ -108,8 +116,8 @@ object HalvesLayout {
     /** gap between the emoji halves, relative to the emoji palette width (also used for the empty columns of the emoji grid) */
     private const val EMOJI_GAP_FRACTION = 0.05f
     // keys starting with "floating_pos" don't make Settings reload all values when written (see Settings.reloadOnChanged)
-    private const val PREF_LAYOUT_PORTRAIT = "floating_pos_halves_layout_portrait"
-    private const val PREF_LAYOUT_LANDSCAPE = "floating_pos_halves_layout_landscape"
+    private const val PREF_LAYOUT_PORTRAIT = "floating_pos_halves_layout2_portrait"
+    private const val PREF_LAYOUT_LANDSCAPE = "floating_pos_halves_layout2_landscape"
     private const val PREF_OPACITY = "floating_pos_halves_opacity"
     const val MIN_OPACITY = 0.3f // never completely transparent
     const val LEFT = 0
@@ -137,12 +145,17 @@ object HalvesLayout {
         windowWidth = if (viewWidth > 0) viewWidth else ResourceUtils.getDefaultKeyboardWidth(context)
         windowHeight = if (viewHeight > 0) viewHeight else res.displayMetrics.heightPixels - statusBarHeight(context)
         linked = Settings.getValues().mFloatingHalvesLinked
-        if (!opacityLoaded) {
-            opacityLoaded = true
-            opacity = context.prefs().getFloat(PREF_OPACITY, 1f).coerceIn(MIN_OPACITY, 1f)
-        }
+        loadOpacity(context)
         if (!loadedFromPrefs[orientation]) loadStates(context)
         applyStates()
+    }
+
+    /** the opacity is used by the floating halves and (if enabled in the settings) by the normal keyboard */
+    @JvmStatic
+    fun loadOpacity(context: Context) {
+        if (opacityLoaded) return
+        opacityLoaded = true
+        opacity = context.prefs().getFloat(PREF_OPACITY, 1f).coerceIn(MIN_OPACITY, 1f)
     }
 
     /** [persist] only when the user is done (e.g. lifted the finger from the slider) */
@@ -192,13 +205,16 @@ object HalvesLayout {
     /** default: each half at its side of the window, bottom aligned, normal size */
     private fun defaultStates(): Array<HalfState> {
         val bottom = maxBottom() / windowHeight.toFloat()
-        return arrayOf(HalfState(0f, bottom, 1f, 1f), HalfState(1f, bottom, 1f, 1f))
+        return arrayOf(
+            HalfState(defaultLeftEdge / windowWidth.toFloat(), bottom, 1f, 1f),
+            HalfState(1f - defaultRightEdge / windowWidth.toFloat(), bottom, 1f, 1f)
+        )
     }
 
     /** calculate the user rects from the saved layout and the normal panel size */
     private fun applyStates() {
-        val s = states[orientation] ?: return
-        if (windowWidth <= 0 || windowHeight <= 0 || refPanelWidth <= 0 || refPanelHeight <= 0) return
+        if (windowWidth <= 0 || windowHeight <= 0 || refKeyAreaWidth <= 0 || refKeyAreaHeight <= 0) return
+        val s = states[orientation] ?: defaultStates() // not saved: always follows the settings, e.g. side padding
         val leftWidth = (refPanelWidth * s[0].widthFactor).toInt()
         val leftHeight = (refPanelHeight * s[0].heightFactor).toInt()
         val leftX = (s[0].edge * windowWidth).toInt()
@@ -214,7 +230,7 @@ object HalvesLayout {
     }
 
     private fun storeStates() {
-        if (refPanelWidth <= 0 || refPanelHeight <= 0) return
+        if (refKeyAreaWidth <= 0 || refKeyAreaHeight <= 0) return
         fun state(r: Rect, edge: Int) = HalfState(
             edge / windowWidth.toFloat(), r.bottom / windowHeight.toFloat(),
             r.width() / refPanelWidth.toFloat(), r.height() / refPanelHeight.toFloat()
@@ -225,26 +241,32 @@ object HalvesLayout {
     // ---- layout when building the keyboard ----
 
     /**
-     * Called by the keyboard builder with the extents of the two key blocks of the normal keyboard
-     * ([designLeft], [designRight], in pixels), the typical key size ([keyWidth], [keyHeight]) and the size of the key area
-     * of the normal keyboard ([baseWidth], [baseHeight], which depend on the user's keyboard height and size settings).
-     * Calculates the normal and minimum panel sizes, uses the default layout if nothing was saved, and clamps the layout.
+     * Called by the keyboard builder with the size of the key area of the normal keyboard ([baseWidth], [baseHeight]; they depend
+     * on the user's keyboard height, key size and gap settings), the width of the spacer in the middle of the rows
+     * ([splitSpacer], relative to the width; only the user's split keyboard setting, if enabled) and the side padding.
+     *
+     * The normal size of a half is what the key area of a half has in the docked keyboard, so with the default layout the keys
+     * have exactly the size they have when docked. Everything here only depends on settings and window, not on the keyboard layout
+     * (letters, symbols, ...), so all layouts get the same panels. Calculates minimum panel sizes and clamps the layout.
      */
     @JvmStatic
-    fun layoutForBuild(designLeft: RectF, designRight: RectF, keyWidth: Float, keyHeight: Float, baseWidth: Int, baseHeight: Int) {
-        refPanelWidth = baseWidth / 2 + 2 * innerPadding
-        refPanelHeight = baseHeight + handleHeight + 2 * innerPadding
+    fun layoutForBuild(baseWidth: Int, baseHeight: Int, splitSpacer: Float, leftPadding: Int, rightPadding: Int) {
+        refKeyAreaWidth = (baseWidth / (2f * (1f + splitSpacer))).toInt()
+        refKeyAreaHeight = baseHeight
+        defaultLeftEdge = leftPadding
+        defaultRightEdge = rightPadding
 
+        // The minimum key size is never larger than the keys of the docked keyboard: the panels don't get bigger than the user's
+        // settings say, and the default size is exactly the docked size. (Assuming the typical 5 keys per row and half, and 5 rows.)
         val minKey = MIN_KEY_SIZE_DP * density
-        val scaleX = if (keyWidth > 0f) minKey / keyWidth else 1f
-        val scaleY = if (keyHeight > 0f) minKey / keyHeight else 1f
+        val minFactorWidth = min(1f, minKey / (refKeyAreaWidth / 5f))
+        val minFactorHeight = min(1f, minKey / (refKeyAreaHeight / 5f))
         val maxPanelWidth = windowWidth / 2 - gap / 2
         // on narrow screens both halves can't have keys of the minimum size, the panels are then limited to half of the screen
-        minWidthLeft = min((designLeft.width() * scaleX).toInt() + 2 * innerPadding, maxPanelWidth)
-        minWidthRight = min((designRight.width() * scaleX).toInt() + 2 * innerPadding, maxPanelWidth)
-        minHeightPanel = min((designLeft.height() * scaleY).toInt() + handleHeight + 2 * innerPadding, maxBottom() - stripHeight)
+        minWidthLeft = min((refKeyAreaWidth * minFactorWidth).toInt() + 2 * innerPadding, maxPanelWidth)
+        minWidthRight = minWidthLeft
+        minHeightPanel = min((refKeyAreaHeight * minFactorHeight).toInt() + handleHeight + 2 * innerPadding, maxBottom() - stripHeight)
 
-        if (states[orientation] == null) states[orientation] = defaultStates() // in memory only, saved once the user changes something
         applyStates()
         builtLeft.set(userLeft)
         builtRight.set(userRight)
@@ -336,8 +358,8 @@ object HalvesLayout {
         region.union(right)
         if (includeStrip && stripHeight > 0)
             region.union(strip)
-        if (opacityBarVisible)
-            region.union(opacityBar)
+        if (opacityBarVisible) // a touch anywhere dismisses the slider (the app doesn't get that touch)
+            region.union(Rect(0, 0, windowWidth, windowHeight))
     }
 
     /** The key (hit) area of a panel: below the handle and inside the inner padding. */
@@ -357,6 +379,8 @@ object HalvesLayout {
     fun beginInteraction(half: Int) {
         startRect.set(if (half == LEFT) userLeft else userRight)
         startRectOther.set(if (half == LEFT) userRight else userLeft)
+        startActiveTop = left.top
+        startActiveBottom = left.bottom
     }
 
     /**
@@ -366,6 +390,21 @@ object HalvesLayout {
      */
     @JvmStatic
     fun interact(half: Int, resize: Boolean, dx: Float, dy: Float) {
+        if (emojiMode) {
+            // emoji palette: only vertical, both halves together (its panels are derived from the layout of the letters)
+            if (resize) return
+            val minDy = max(stripHeight - startActiveTop, max(stripHeight - startRect.top, stripHeight - startRectOther.top))
+            val maxDy = min(maxBottom() - startActiveBottom, min(maxBottom() - startRect.bottom, maxBottom() - startRectOther.bottom))
+            val moveY = if (maxDy < minDy) 0 else dy.toInt().coerceIn(minDy, maxDy)
+            val (startLeft, startRight) = if (half == LEFT) startRect to startRectOther else startRectOther to startRect
+            userLeft.set(startLeft)
+            userLeft.offset(0, moveY)
+            userRight.set(startRight)
+            userRight.offset(0, moveY)
+            previewActive = false
+            updateActive()
+            return
+        }
         val target = if (half == LEFT) userLeft else userRight
         val r = Rect(startRect)
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)

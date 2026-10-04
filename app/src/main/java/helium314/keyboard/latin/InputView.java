@@ -114,7 +114,12 @@ public final class InputView extends FrameLayout {
     /** show or hide the opacity slider of the floating halves (above the left half) */
     public void toggleHalvesOpacityBar() {
         final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
-        frame.setOpacityBarVisible(!HalvesLayout.opacityBarVisible);
+        frame.toggleOpacityBar();
+    }
+
+    public void hideHalvesOpacityBar() {
+        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
+        frame.setOpacityBarVisible(false);
     }
 
     /**
@@ -147,6 +152,7 @@ public final class InputView extends FrameLayout {
     private Unit onNextLayout(View v) {
         if (!mFloatingHalvesActive) // in floating halves mode the frame stays transparent, the panels have the background
             Settings.getValues().mColors.setBackground(findViewById(R.id.main_keyboard_frame), ColorType.MAIN_BACKGROUND);
+        ((KeyboardFrameLayout) findViewById(R.id.main_keyboard_frame)).applyOpacity();
 
         // Work around inset application being unreliable
         requestApplyInsets();

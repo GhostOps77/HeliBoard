@@ -77,8 +77,12 @@
     <string name="floating_halves_strip_single">One toolbar above both halves</string>
     <string name="floating_halves_strip_linked">Linked height: move both halves with the handle on the left, toolbar above the right half</string>
     <string name="halves_opacity" tools:keep="@string/halves_opacity">Halves opacity</string>
+    <string name="opacity_everywhere">Opacity slider in all keyboard modes</string>
+    <string name="opacity_everywhere_summary">The opacity key in the toolbar also works for the normal docked keyboard. Off: only for the floating halves.</string>
+    <string name="halves_dock" tools:keep="@string/halves_dock">Dock / undock halves</string>
+    <string name="halves_dock_unavailable">Turn on \"Floating split halves\" in the appearance settings first</string>
     <string name="halves_opacity_slider">Keyboard opacity</string>
-    <string name="halves_opacity_unavailable">Opacity can only be changed for floating halves</string>
+    <string name="halves_opacity_unavailable">Opacity can only be changed for floating halves. It can be enabled for all keyboard modes in the appearance settings.</string>
     <string name="floating_halves_summary">Split the keyboard into two halves that can be moved and resized independently. Turn off to dock them back into one keyboard.</string>
     <!-- Option for setting distance for split keyboard in portrait mode -->
     <string name="split_spacer_scale">Split distance</string>

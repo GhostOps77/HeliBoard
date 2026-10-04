@@ -151,6 +151,8 @@ public class SettingsValues {
     public final boolean mFloatingHalvesAvailable;
     /** halves are moved together vertically with the left handle, and the toolbar is only above the right half */
     public final boolean mFloatingHalvesLinked;
+    /** the opacity toolbar key / slider works for all keyboard modes, not only for the floating halves */
+    public final boolean mOpacityEverywhere;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -296,6 +298,7 @@ public class SettingsValues {
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
         mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        mOpacityEverywhere = prefs.getBoolean(Settings.PREF_OPACITY_EVERYWHERE, Defaults.PREF_OPACITY_EVERYWHERE);
         mFloatingHalvesLinked = Settings.FLOATING_HALVES_STRIP_LINKED.equals(
                 prefs.getString(Settings.PREF_FLOATING_HALVES_STRIP, Defaults.PREF_FLOATING_HALVES_STRIP));
         // docked halves are just the normal keyboard
