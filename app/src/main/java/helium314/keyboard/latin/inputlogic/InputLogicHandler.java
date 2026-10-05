@@ -82,7 +82,8 @@ class InputLogicHandler implements Handler.Callback {
                 // Batch input has ended or canceled while the message was being delivered.
                 return;
             }
-            mInputLogic.mWordComposer.setBatchInputPointers(batchPointers);
+            // a swipe that continues a word is recognized together with the letters before it
+            mInputLogic.mWordComposer.setBatchInputPointers(mInputLogic.withContinuedWord(batchPointers));
             getSuggestedWords(() -> mInputLogic.getSuggestedWords(
                 isTailBatchInput ? InputStyle.TAIL_BATCH : InputStyle.UPDATE_BATCH, sequenceNumber,
                 suggestedWords -> showGestureSuggestionsWithPreviewVisuals(suggestedWords, isTailBatchInput))

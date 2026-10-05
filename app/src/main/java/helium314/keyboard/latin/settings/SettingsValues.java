@@ -155,6 +155,8 @@ public class SettingsValues {
     public final boolean mOpacityEverywhere;
     /** when a swiped word is committed: {@link Settings#SWIPE_COMMIT_IMMEDIATE}, _HIGHLIGHT or _HOLD */
     public final String mSwipeCommitMode;
+    /** whether a swipe that starts in the middle of a word adds to that word, see {@link Settings#SWIPE_CONTINUES_TYPED} */
+    public final String mSwipeContinuesWord;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -300,6 +302,7 @@ public class SettingsValues {
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
         mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        mSwipeContinuesWord = prefs.getString(Settings.PREF_SWIPE_CONTINUES_WORD, Defaults.PREF_SWIPE_CONTINUES_WORD);
         final String swipeCommitMode = prefs.getString(Settings.PREF_SWIPE_COMMIT_MODE, null);
         mSwipeCommitMode = swipeCommitMode != null ? swipeCommitMode // migrate the old on / off setting
                 : prefs.getBoolean(Settings.PREF_DELAY_SWIPE_COMMIT, Defaults.PREF_DELAY_SWIPE_COMMIT)
@@ -383,6 +386,16 @@ public class SettingsValues {
     public boolean highlightsSwipedWord() {
         return Settings.SWIPE_COMMIT_HIGHLIGHT.equals(mSwipeCommitMode)
                 || (Settings.SWIPE_COMMIT_HOLD.equals(mSwipeCommitMode) && !holdsSwipedWord());
+    }
+
+    /** a swipe adds to the word that is being typed (tap h, tap e, swipe l to o: hello) */
+    public boolean continuesTypedWord() {
+        return Settings.SWIPE_CONTINUES_TYPED.equals(mSwipeContinuesWord) || Settings.SWIPE_CONTINUES_TYPED_AND_SWIPED.equals(mSwipeContinuesWord);
+    }
+
+    /** a swipe also adds to a word that was swiped before (and is not finished with space) */
+    public boolean continuesSwipedWord() {
+        return Settings.SWIPE_CONTINUES_TYPED_AND_SWIPED.equals(mSwipeContinuesWord);
     }
 
     public boolean needsToLookupSuggestions() {
