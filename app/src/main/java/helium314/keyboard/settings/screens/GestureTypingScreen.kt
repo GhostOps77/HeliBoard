@@ -50,6 +50,8 @@ fun GestureTypingScreen(
         if (gestureEnabled)
             Settings.PREF_SWIPE_COMMIT_MODE else null,
         if (gestureEnabled)
+            Settings.PREF_SWIPE_CONTINUES_WORD else null,
+        if (gestureEnabled)
             Settings.PREF_GESTURE_FAST_TYPING_COOLDOWN else null,
         if (gestureEnabled &&
             (prefs.getBoolean(Settings.PREF_GESTURE_PREVIEW_TRAIL, Defaults.PREF_GESTURE_PREVIEW_TRAIL) || gestureFloatingPreviewEnabled))
@@ -87,6 +89,14 @@ fun createGestureTypingSettings(context: Context) = listOf(
             ctx.prefs().edit { putBoolean(Settings.PREF_GESTURE_DYNAMIC_PREVIEW_FOLLOW_SYSTEM, followingSystem) }
             KeyboardSwitcher.getInstance().setThemeNeedsReload()
         }
+    },
+    Setting(context, Settings.PREF_SWIPE_CONTINUES_WORD, R.string.swipe_continues_word) { setting ->
+        val items = listOf(
+            stringResource(R.string.swipe_continues_never) to Settings.SWIPE_CONTINUES_NEVER,
+            stringResource(R.string.swipe_continues_typed) to Settings.SWIPE_CONTINUES_TYPED,
+            stringResource(R.string.swipe_continues_typed_and_swiped) to Settings.SWIPE_CONTINUES_TYPED_AND_SWIPED,
+        )
+        ListPreference(setting, items, Defaults.PREF_SWIPE_CONTINUES_WORD)
     },
     Setting(context, Settings.PREF_SWIPE_COMMIT_MODE, R.string.swipe_commit_mode) { setting ->
         val items = listOf(
