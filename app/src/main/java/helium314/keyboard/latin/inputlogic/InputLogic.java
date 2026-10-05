@@ -30,6 +30,7 @@ import androidx.annotation.Nullable;
 import helium314.keyboard.compat.AppWorkarounds;
 import helium314.keyboard.event.Event;
 import helium314.keyboard.event.InputTransaction;
+import helium314.keyboard.keyboard.Key;
 import helium314.keyboard.keyboard.Keyboard;
 import helium314.keyboard.keyboard.KeyboardElement;
 import helium314.keyboard.keyboard.KeyboardLayoutSet;
@@ -576,6 +577,8 @@ public final class InputLogic {
             final KeyboardSwitcher keyboardSwitcher, final LatinIME.UIHandler handler) {
         flushPendingSwipeWord(settingsValues); // a held word is committed by the next swipe, like a word in the text field
         mWordBeingCorrectedByCursor = null;
+        mContinuedWordPrefix = null;
+        mContinuedWordSavedPointers = null;
         mInputLogicHandler.onStartBatchInput();
         handler.showGesturePreviewAndSetSuggestions(SuggestedWords.getEmptyBatchInstance(), false);
         handler.cancelUpdateSuggestionStrip();
@@ -587,7 +590,15 @@ public final class InputLogic {
             BackgroundGatheringCache.INSTANCE.onEditWord(mWordComposer.getTypedWord());
 
         mConnection.beginBatchEdit();
-        if (mWordComposer.isComposingWord()) {
+        // with the setting for it, a swipe in the middle of a word adds to that word instead of committing it first
+        final InputPointers continuedWordPrefix = mWordComposer.isComposingWord() && !mWordComposer.isCursorFrontOrMiddleOfComposingWord()
+                ? buildContinuedWordPrefix(settingsValues, keyboardSwitcher) : null;
+        if (continuedWordPrefix != null) {
+            mContinuedWordPrefix = continuedWordPrefix;
+            mContinuedWordSavedPointers = copyOf(mWordComposer.getInputPointers());
+            mContinuedWordWasBatchMode = mWordComposer.isBatchMode();
+            mSpaceState = SpaceState.NONE; // no automatic space (armed after the swipe before) into the middle of the word
+        } else if (mWordComposer.isComposingWord()) {
             if (mWordComposer.isCursorFrontOrMiddleOfComposingWord()) {
                 // If we are in the middle of a recorrection, we need to commit the recorrection
                 // first so that we can insert the batch input at the current cursor position.
@@ -614,8 +625,9 @@ public final class InputLogic {
                 mWordComposer.setRejectedBatchModeSuggestion(selectedText.toString());
         }
         final int codePointBeforeCursor = mConnection.getCodePointBeforeCursor();
-        if (Character.isLetterOrDigit(codePointBeforeCursor)
-                || settingsValues.isUsuallyFollowedBySpace(codePointBeforeCursor)) {
+        // (no automatic space when the swipe continues the word before the cursor)
+        if (continuedWordPrefix == null && (Character.isLetterOrDigit(codePointBeforeCursor)
+                || settingsValues.isUsuallyFollowedBySpace(codePointBeforeCursor))) {
             // autoShiftHasBeenOverridden is weird
             // before switching CapsMode to enum, it was CapsMode != autoCapsState
             // autoCapsState is 0 (off), 0x1000, 0x2000, 0x4000 or a combination
@@ -636,8 +648,9 @@ public final class InputLogic {
             }
         }
         mConnection.endBatchEdit();
-        mWordComposer.setCapitalizedModeAtStartComposingTime(
-                getActualCapsMode(settingsValues, keyboardSwitcher.getKeyboardCapsMode()));
+        if (continuedWordPrefix == null) // a continued word keeps the capitalization it started with
+            mWordComposer.setCapitalizedModeAtStartComposingTime(
+                    getActualCapsMode(settingsValues, keyboardSwitcher.getKeyboardCapsMode()));
     }
 
     /* The sequence number member is only used in onUpdateBatchInput. It is increased each time
@@ -666,6 +679,7 @@ public final class InputLogic {
 
     public void onCancelBatchInput(final LatinIME.UIHandler handler) {
         mInputLogicHandler.onCancelBatchInput();
+        cancelContinuedWord();
         handler.showGesturePreviewAndSetSuggestions(
                 SuggestedWords.getEmptyInstance(), true /* dismissGestureFloatingPreviewText */);
     }
@@ -2364,10 +2378,14 @@ public final class InputLogic {
     public void onUpdateTailBatchInputCompleted(final SettingsValues settingsValues,
             final SuggestedWords suggestedWords, final KeyboardSwitcher keyboardSwitcher) {
         final String batchInputText = suggestedWords.isEmpty() ? null : suggestedWords.getWord(0);
+        final boolean continuedWord = mContinuedWordPrefix != null;
+        mContinuedWordPrefix = null;
+        mContinuedWordSavedPointers = null;
         if (TextUtils.isEmpty(batchInputText)) {
             return;
         }
-        if (settingsValues.fieldAllowsComposing() && settingsValues.holdsSwipedWord()) {
+        // (a continued word is already in the text field, as composing text, and is replaced: it can't be held back)
+        if (!continuedWord && settingsValues.fieldAllowsComposing() && settingsValues.holdsSwipedWord()) {
             // Held: the word is only in the word composer and shown in the suggestion bar, not in the text field. It is inserted
             // by flushPendingSwipeWord() before the next input (space, next swipe, ...) is handled, which then commits it as usual.
             mWordComposer.setBatchInputWord(batchInputText);
@@ -2376,6 +2394,83 @@ public final class InputLogic {
             return;
         }
         insertSwipedWord(settingsValues, batchInputText, keyboardSwitcher);
+    }
+
+    // ---- a swipe that continues the word that is being typed (Nintype style: tap h, tap e, swipe l to o: hello) ----
+
+    private static final int CONTINUED_WORD_POINT_INTERVAL_MS = 100;
+    /**
+     * Points of the word that the swipe in progress continues: the key centers of the typed letters, or the points of the swiped word.
+     * The recognizer gets this path followed by the swipe, so it recognizes the whole word. Null if the swipe starts a new word.
+     */
+    private InputPointers mContinuedWordPrefix = null;
+    // what the word composer had before, to restore it if the swipe is canceled
+    private InputPointers mContinuedWordSavedPointers = null;
+    private boolean mContinuedWordWasBatchMode = false;
+
+    @Nullable
+    private InputPointers buildContinuedWordPrefix(final SettingsValues settingsValues, final KeyboardSwitcher keyboardSwitcher) {
+        final String word = mWordComposer.getTypedWord();
+        if (TextUtils.isEmpty(word)) return null;
+        if (mWordComposer.isBatchMode()) {
+            if (!settingsValues.continuesSwipedWord()) return null;
+            final InputPointers current = mWordComposer.getInputPointers();
+            return current.getPointerSize() == 0 ? null : copyOf(current);
+        }
+        if (!settingsValues.continuesTypedWord()) return null;
+        final Keyboard keyboard = keyboardSwitcher.getKeyboard();
+        if (keyboard == null) return null;
+        // typed letters: a point at the center of each key (the same coordinate space as the swipe, also with floating halves)
+        final InputPointers prefix = new InputPointers(word.length());
+        int time = 0;
+        for (int i = 0; i < word.length(); i = word.offsetByCodePoints(i, 1)) {
+            final int codePoint = word.codePointAt(i);
+            Key key = keyboard.getKey(codePoint);
+            if (key == null) key = keyboard.getKey(Character.toLowerCase(codePoint));
+            if (key == null) key = keyboard.getKey(Character.toUpperCase(codePoint));
+            if (key == null) return null; // a letter that is not on this keyboard can't be replayed
+            prefix.addPointer(key.getX() + key.getWidth() / 2, key.getY() + key.getHeight() / 2, -1, time);
+            time += CONTINUED_WORD_POINT_INTERVAL_MS;
+        }
+        return prefix;
+    }
+
+    private static InputPointers copyOf(final InputPointers pointers) {
+        final int size = pointers.getPointerSize();
+        final InputPointers copy = new InputPointers(Math.max(size, 1));
+        final int[] x = pointers.getXCoordinates(), y = pointers.getYCoordinates(), ids = pointers.getPointerIds(), times = pointers.getTimes();
+        for (int i = 0; i < size; i++)
+            copy.addPointer(x[i], y[i], ids[i], times[i]);
+        return copy;
+    }
+
+    /** The points to recognize: the path of the word that is continued (if any) followed by the points of the swipe. */
+    public InputPointers withContinuedWord(final InputPointers swipePointers) {
+        final InputPointers prefix = mContinuedWordPrefix;
+        final int swipeSize = swipePointers.getPointerSize();
+        if (prefix == null || swipeSize == 0) return swipePointers;
+        final int prefixSize = prefix.getPointerSize();
+        final InputPointers combined = new InputPointers(prefixSize + swipeSize);
+        final int[] swipeX = swipePointers.getXCoordinates(), swipeY = swipePointers.getYCoordinates();
+        final int[] swipeIds = swipePointers.getPointerIds(), swipeTimes = swipePointers.getTimes();
+        final int[] x = prefix.getXCoordinates(), y = prefix.getYCoordinates(), ids = prefix.getPointerIds(), times = prefix.getTimes();
+        for (int i = 0; i < prefixSize; i++) // typed letters (id -1) are part of the same stroke as the swipe
+            combined.addPointer(x[i], y[i], ids[i] < 0 ? swipeIds[0] : ids[i], times[i]);
+        final int timeOffset = (prefixSize > 0 ? times[prefixSize - 1] : 0) + CONTINUED_WORD_POINT_INTERVAL_MS;
+        for (int i = 0; i < swipeSize; i++)
+            combined.addPointer(swipeX[i], swipeY[i], swipeIds[i], swipeTimes[i] + timeOffset);
+        return combined;
+    }
+
+    /** the swipe that continued a word was canceled: the word is as it was before the swipe */
+    private void cancelContinuedWord() {
+        if (mContinuedWordPrefix == null) return;
+        mContinuedWordPrefix = null;
+        if (mContinuedWordSavedPointers != null) {
+            mWordComposer.setBatchInputPointers(mContinuedWordSavedPointers);
+            if (!mContinuedWordWasBatchMode) mWordComposer.unsetBatchMode();
+        }
+        mContinuedWordSavedPointers = null;
     }
 
     /** The swiped word is held in the suggestion bar (see {@link SettingsValues#holdsSwipedWord()}), nothing is in the text field yet. */

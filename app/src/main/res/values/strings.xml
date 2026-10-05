@@ -79,6 +79,10 @@
     <string name="halves_opacity" tools:keep="@string/halves_opacity">Halves opacity</string>
     <string name="opacity_everywhere">Opacity slider in all keyboard modes</string>
     <string name="opacity_everywhere_summary">The opacity key in the toolbar also works for the normal docked keyboard. Off: only for the floating halves.</string>
+    <string name="swipe_continues_word">Swipe in the middle of a word</string>
+    <string name="swipe_continues_never">Starts a new word (default)</string>
+    <string name="swipe_continues_typed">Adds to the word you are typing: tap h, tap e, swipe l to o gives hello</string>
+    <string name="swipe_continues_typed_and_swiped">Adds to a typed or swiped word, press space to finish the word</string>
     <string name="swipe_commit_mode">When to commit a swiped word</string>
     <string name="swipe_commit_immediate">When the swipe ends (default)</string>
     <string name="swipe_commit_highlight">Highlight it in the text until space or the next swipe</string>
