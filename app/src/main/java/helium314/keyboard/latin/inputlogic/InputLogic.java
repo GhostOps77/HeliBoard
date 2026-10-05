@@ -2440,8 +2440,9 @@ public final class InputLogic {
             setComposingTextInternal(batchInputText, 1);
         }
         mConnection.endBatchEdit();
-        // Space state must be updated before calling updateShiftState
-        if (settingsValues.mAutospaceAfterGestureTyping)
+        // Space state must be updated before calling updateShiftState.
+        // (If a swiped word can be continued, it is finished with space: typing after it adds to the word, without an automatic space.)
+        if (settingsValues.mAutospaceAfterGestureTyping && !settingsValues.continuesSwipedWord())
             mSpaceState = SpaceState.PHANTOM;
         keyboardSwitcher.updateShiftState(getCurrentAutoCapsState(settingsValues), getCurrentRecapitalizeState());
 
