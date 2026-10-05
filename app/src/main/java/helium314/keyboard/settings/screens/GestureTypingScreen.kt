@@ -19,6 +19,7 @@ import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.SearchSettingsScreen
 import helium314.keyboard.settings.SettingsActivity
+import helium314.keyboard.settings.preferences.ListPreference
 import helium314.keyboard.settings.preferences.SliderPreference
 import helium314.keyboard.settings.preferences.SwitchPreference
 import helium314.keyboard.latin.utils.Theme
@@ -47,7 +48,7 @@ fun GestureTypingScreen(
         if (gestureEnabled)
             Settings.PREF_GESTURE_SPACE_AWARE else null,
         if (gestureEnabled)
-            Settings.PREF_DELAY_SWIPE_COMMIT else null,
+            Settings.PREF_SWIPE_COMMIT_MODE else null,
         if (gestureEnabled)
             Settings.PREF_GESTURE_FAST_TYPING_COOLDOWN else null,
         if (gestureEnabled &&
@@ -87,8 +88,13 @@ fun createGestureTypingSettings(context: Context) = listOf(
             KeyboardSwitcher.getInstance().setThemeNeedsReload()
         }
     },
-    Setting(context, Settings.PREF_DELAY_SWIPE_COMMIT, R.string.delay_swipe_commit, R.string.delay_swipe_commit_summary) {
-        SwitchPreference(it, Defaults.PREF_DELAY_SWIPE_COMMIT)
+    Setting(context, Settings.PREF_SWIPE_COMMIT_MODE, R.string.swipe_commit_mode) { setting ->
+        val items = listOf(
+            stringResource(R.string.swipe_commit_immediate) to Settings.SWIPE_COMMIT_IMMEDIATE,
+            stringResource(R.string.swipe_commit_highlight) to Settings.SWIPE_COMMIT_HIGHLIGHT,
+            stringResource(R.string.swipe_commit_hold) to Settings.SWIPE_COMMIT_HOLD,
+        )
+        ListPreference(setting, items, Defaults.PREF_SWIPE_COMMIT_MODE)
     },
     Setting(context, Settings.PREF_GESTURE_SPACE_AWARE, R.string.gesture_space_aware, R.string.gesture_space_aware_summary) {
         SwitchPreference(it, Defaults.PREF_GESTURE_SPACE_AWARE)

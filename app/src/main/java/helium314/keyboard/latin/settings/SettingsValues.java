@@ -153,8 +153,8 @@ public class SettingsValues {
     public final boolean mFloatingHalvesLinked;
     /** the opacity toolbar key / slider works for all keyboard modes, not only for the floating halves */
     public final boolean mOpacityEverywhere;
-    /** a swiped word is shown as pending (highlighted) until space or the next gesture commits it */
-    public final boolean mDelaySwipeCommit;
+    /** when a swiped word is committed: {@link Settings#SWIPE_COMMIT_IMMEDIATE}, _HIGHLIGHT or _HOLD */
+    public final String mSwipeCommitMode;
     public final int mFloatingWidth;
     public final int mFloatingHeight;
     public final int mKeypressVibrationDuration;
@@ -300,7 +300,10 @@ public class SettingsValues {
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
         mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
-        mDelaySwipeCommit = prefs.getBoolean(Settings.PREF_DELAY_SWIPE_COMMIT, Defaults.PREF_DELAY_SWIPE_COMMIT);
+        final String swipeCommitMode = prefs.getString(Settings.PREF_SWIPE_COMMIT_MODE, null);
+        mSwipeCommitMode = swipeCommitMode != null ? swipeCommitMode // migrate the old on / off setting
+                : prefs.getBoolean(Settings.PREF_DELAY_SWIPE_COMMIT, Defaults.PREF_DELAY_SWIPE_COMMIT)
+                    ? Settings.SWIPE_COMMIT_HIGHLIGHT : Settings.SWIPE_COMMIT_IMMEDIATE;
         mOpacityEverywhere = prefs.getBoolean(Settings.PREF_OPACITY_EVERYWHERE, Defaults.PREF_OPACITY_EVERYWHERE);
         mFloatingHalvesLinked = Settings.FLOATING_HALVES_STRIP_LINKED.equals(
                 prefs.getString(Settings.PREF_FLOATING_HALVES_STRIP, Defaults.PREF_FLOATING_HALVES_STRIP));
@@ -366,6 +369,20 @@ public class SettingsValues {
      */
     public boolean fieldAllowsComposing() {
         return mInputAttributes.mShouldShowSuggestions || mOverrideShowingSuggestions;
+    }
+
+    /**
+     * The swiped word is not put into the text field until space or the next swipe: it is only shown in the suggestion bar.
+     * This needs the suggestion bar, without it the word would not be visible.
+     */
+    public boolean holdsSwipedWord() {
+        return Settings.SWIPE_COMMIT_HOLD.equals(mSwipeCommitMode) && needsToLookupSuggestions() && mToolbarMode != ToolbarMode.HIDDEN;
+    }
+
+    /** The swiped word is highlighted in the text field until space or the next swipe (also if holding it is not possible). */
+    public boolean highlightsSwipedWord() {
+        return Settings.SWIPE_COMMIT_HIGHLIGHT.equals(mSwipeCommitMode)
+                || (Settings.SWIPE_COMMIT_HOLD.equals(mSwipeCommitMode) && !holdsSwipedWord());
     }
 
     public boolean needsToLookupSuggestions() {
