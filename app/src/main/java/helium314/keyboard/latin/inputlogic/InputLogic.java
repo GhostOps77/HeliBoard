@@ -213,6 +213,7 @@ public final class InputLogic {
      * Clean up the input logic after input is finished.
      */
     public void finishInput() {
+        flushPendingSwipeWord(Settings.getValues()); // don't lose a held word when the keyboard is closed
         if (mWordComposer.isComposingWord()) {
             mConnection.finishComposingText();
             StatsUtils.onWordCommitUserTyped(mWordComposer.getTypedWord(), mWordComposer.isBatchMode());
@@ -233,6 +234,7 @@ public final class InputLogic {
      * @return the complete transaction object
      */
     public InputTransaction onTextInput(SettingsValues settingsValues, Event event, CapsMode keyboardCapsMode, LatinIME.UIHandler handler) {
+        flushPendingSwipeWord(settingsValues);
         String rawText = event.getTextToCommit().toString();
         InputTransaction inputTransaction = new InputTransaction(settingsValues, event,
                 SystemClock.uptimeMillis(), mSpaceState,
@@ -282,6 +284,7 @@ public final class InputLogic {
     // interface
     public InputTransaction onPickSuggestionManually(SettingsValues settingsValues, SuggestedWordInfo suggestionInfo,
             CapsMode keyboardCapsMode, LatinIME.UIHandler handler) {
+        flushPendingSwipeWord(settingsValues); // picking a suggestion replaces the swiped word
         if (isInlineEmojiSearchAction()) {
             deleteTextReplacedByEmoji();
         }
@@ -390,6 +393,8 @@ public final class InputLogic {
     public boolean onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart,
              int newSelEnd, int composingSpanStart, int composingSpanEnd, SettingsValues settingsValues) {
         boolean expectCursorMove = mightBeExpectedCursorMove(); // reset the timer
+        if (mSwipeWordPending && (newSelStart != mConnection.getExpectedSelectionStart() || newSelEnd != mConnection.getExpectedSelectionEnd()))
+            discardPendingSwipeWord(); // the text field is unchanged, so a different selection is the user moving the cursor
         if (mConnection.isBelatedExpectedUpdate(oldSelStart, newSelStart, oldSelEnd, newSelEnd, composingSpanStart, composingSpanEnd)) {
             // return whether we expect a user-initiated explicit cursor move (i.e. not as result of other input, but e.g. space swipe)
             // note that arrow keys are not considered, because for them isBelatedExpectedUpdate returns false
@@ -476,6 +481,20 @@ public final class InputLogic {
      */
     public InputTransaction onCodeInput(SettingsValues settingsValues, @NonNull Event event,
             CapsMode keyboardCapsMode, LatinIME.UIHandler handler) {
+        if (mSwipeWordPending) {
+            if (event.getKeyCode() == KeyCode.DELETE) {
+                // backspace removes the held word, there is nothing in the text field to delete
+                final String heldWord = mWordComposer.getTypedWord();
+                resetComposingState(true);
+                mWordComposer.setRejectedBatchModeSuggestion(heldWord);
+                mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
+                final InputTransaction transaction = new InputTransaction(settingsValues, event, SystemClock.uptimeMillis(),
+                        mSpaceState, getActualCapsMode(settingsValues, keyboardCapsMode));
+                transaction.requireShiftUpdate(InputTransaction.SHIFT_UPDATE_NOW);
+                return transaction;
+            }
+            flushPendingSwipeWord(settingsValues);
+        }
         mJustRevertedACommit = false;
 
         if (GestureDataGatheringKt.useBackgroundGathering && mConnection.hasSelection())
@@ -526,6 +545,8 @@ public final class InputLogic {
     }
 
     public void onStartBatchInput(SettingsValues settingsValues, KeyboardSwitcher keyboardSwitcher, LatinIME.UIHandler handler) {
+        flushPendingSwipeWord(settingsValues); // a held word is committed by the next swipe, like a word in the text field
+        mWordBeingCorrectedByCursor = null;
         mInputLogicHandler.onStartBatchInput();
         handler.showGesturePreviewAndSetSuggestions(SuggestedWords.getEmptyBatchInstance(), false);
         handler.cancelUpdateSuggestionStrip();
@@ -2125,6 +2146,7 @@ public final class InputLogic {
      * @param alsoResetLastComposedWord whether to also reset the last composed word.
      */
     private void resetComposingState(final boolean alsoResetLastComposedWord) {
+        mSwipeWordPending = false;
         mWordComposer.reset();
         if (alsoResetLastComposedWord) {
             mLastComposedWord = LastComposedWord.NOT_A_COMPOSED_WORD;
@@ -2267,6 +2289,40 @@ public final class InputLogic {
         if (TextUtils.isEmpty(batchInputText)) {
             return;
         }
+        if (settingsValues.fieldAllowsComposing() && settingsValues.holdsSwipedWord()) {
+            // Held: the word is only in the word composer and shown in the suggestion bar, not in the text field. It is inserted
+            // by flushPendingSwipeWord() before the next input (space, next swipe, ...) is handled, which then commits it as usual.
+            mWordComposer.setBatchInputWord(batchInputText);
+            mSwipeWordPending = true;
+            keyboardSwitcher.updateShiftState(getCurrentAutoCapsState(settingsValues), getCurrentRecapitalizeState());
+            return;
+        }
+        insertSwipedWord(settingsValues, batchInputText, keyboardSwitcher);
+    }
+
+    /** The swiped word is held in the suggestion bar (see {@link SettingsValues#holdsSwipedWord()}), nothing is in the text field yet. */
+    private boolean mSwipeWordPending = false;
+
+    /**
+     * Put the held swiped word into the text field, as it would have been when the swipe ended. Called before anything is done
+     * with the next input, so that input (space, next swipe, a letter, a picked suggestion, ...) works the same as without holding.
+     */
+    private void flushPendingSwipeWord(final SettingsValues settingsValues) {
+        if (!mSwipeWordPending) return;
+        mSwipeWordPending = false;
+        final String heldWord = mWordComposer.getTypedWord();
+        if (TextUtils.isEmpty(heldWord)) return;
+        insertSwipedWord(settingsValues, heldWord, KeyboardSwitcher.getInstance());
+    }
+
+    /** The cursor was moved (or the text field changed) while a word was held: it was never in the text, so it is dropped. */
+    private void discardPendingSwipeWord() {
+        mSwipeWordPending = false;
+        resetComposingState(true);
+        mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
+    }
+
+    private void insertSwipedWord(final SettingsValues settingsValues, final String batchInputText, final KeyboardSwitcher keyboardSwitcher) {
         mConnection.beginBatchEdit();
         if (SpaceState.PHANTOM == mSpaceState) {
             insertAutomaticSpaceIfOptionsAndTextAllow(settingsValues);
@@ -2280,10 +2336,9 @@ public final class InputLogic {
             // pressed, and not at all with enter. Typed letters are committed directly in such fields, so do the same here.
             mConnection.commitText(batchInputText, 1);
             resetComposingState(true);
-        } else if (settingsValues.mDelaySwipeCommit) {
+        } else if (settingsValues.highlightsSwipedWord()) {
             // The word is not committed yet, it stays composing text until space or the next gesture commits it (as before), and it
-            // is highlighted so it is visible that it is still pending. It stays in the editor, so it is not lost if the
-            // app is told to send the text without the keyboard being involved.
+            // is highlighted so it is visible that it is still pending.
             final int highlight = ColorUtils.setAlphaComponent(settingsValues.mColors.get(ColorType.GESTURE_TRAIL), 0x60);
             setComposingTextInternalWithBackgroundColor(batchInputText, 1, highlight, batchInputText.length());
         } else {
