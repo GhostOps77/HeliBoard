@@ -485,9 +485,18 @@ public final class InputLogic {
         if (mSwipeWordPending) {
             if (event.getKeyCode() == KeyCode.DELETE) {
                 // backspace removes the held word, there is nothing in the text field to delete
+                final boolean continued = mSwipeWordPendingContinued;
                 final String heldWord = mWordComposer.getTypedWord();
+                final String oldText = mPendingOldText;
+                final InputPointers oldPointers = mPendingOldPointers;
+                final boolean oldWasBatchMode = mPendingOldWasBatchMode;
                 resetComposingState(true);
-                mWordComposer.setRejectedBatchModeSuggestion(heldWord);
+                if (continued) {
+                    // the word before the swipe is still in the text field and composing: back to it
+                    restoreComposer(oldText, oldPointers, oldWasBatchMode);
+                } else {
+                    mWordComposer.setRejectedBatchModeSuggestion(heldWord);
+                }
                 mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
                 final InputTransaction transaction = new InputTransaction(settingsValues, event, SystemClock.uptimeMillis(),
                         mSpaceState, getActualCapsMode(settingsValues, keyboardCapsMode));
@@ -566,6 +575,7 @@ public final class InputLogic {
                 ? buildContinuedWordPrefix(settingsValues, keyboardSwitcher) : null;
         if (continuedWordPrefix != null) {
             mContinuedWordPrefix = continuedWordPrefix;
+            mContinuedWordText = mWordComposer.getTypedWord();
             mContinuedWordSavedPointers = copyOf(mWordComposer.getInputPointers());
             mContinuedWordWasBatchMode = mWordComposer.isBatchMode();
             mSpaceState = SpaceState.NONE; // no automatic space (armed after the swipe before) into the middle of the word
@@ -2161,6 +2171,7 @@ public final class InputLogic {
      */
     private void resetComposingState(final boolean alsoResetLastComposedWord) {
         mSwipeWordPending = false;
+        mSwipeWordPendingContinued = false;
         mWordComposer.reset();
         if (alsoResetLastComposedWord) {
             mLastComposedWord = LastComposedWord.NOT_A_COMPOSED_WORD;
@@ -2299,23 +2310,59 @@ public final class InputLogic {
      */
     public void onUpdateTailBatchInputCompleted(final SettingsValues settingsValues,
             final SuggestedWords suggestedWords, final KeyboardSwitcher keyboardSwitcher) {
-        final String batchInputText = suggestedWords.isEmpty() ? null : suggestedWords.getWord(0);
+        final String decodedText = suggestedWords.isEmpty() ? null : suggestedWords.getWord(0);
         final boolean continuedWord = mContinuedWordPrefix != null;
+        final String oldText = mContinuedWordText;
+        final InputPointers oldPointers = mContinuedWordSavedPointers;
+        final boolean oldWasBatchMode = mContinuedWordWasBatchMode;
+        final InputPointers swipe = mContinuedSwipePointers;
         mContinuedWordPrefix = null;
         mContinuedWordSavedPointers = null;
-        if (TextUtils.isEmpty(batchInputText)) {
+        mContinuedSwipePointers = null;
+        if (TextUtils.isEmpty(decodedText)) {
+            if (continuedWord) restoreComposer(oldText, oldPointers, oldWasBatchMode);
             return;
         }
-        // (a continued word is already in the text field, as composing text, and is replaced: it can't be held back)
-        if (!continuedWord && settingsValues.fieldAllowsComposing() && settingsValues.holdsSwipedWord()) {
+        String word = decodedText;
+        if (continuedWord) {
+            // The recognizer only knows whole words, so for a part of a word it returns the nearest word (e + x + p, then a swipe
+            // from e to r: expert). The letters of the swipe are added to the word as they are. The recognized word is only used
+            // if it differs from that by repeated letters, which a path can't show (the path of hello has one l).
+            final Keyboard keyboard = keyboardSwitcher.getKeyboard();
+            final String letters = keyboard == null || swipe == null ? "" : lettersOfSwipe(swipe, keyboard);
+            if (!letters.isEmpty()) {
+                word = oldText + letters;
+                final String wordWithoutRepeats = withoutRepeats(word);
+                for (int i = 0; i < Math.min(suggestedWords.size(), 6); i++) {
+                    if (withoutRepeats(suggestedWords.getWord(i)).equals(wordWithoutRepeats)) {
+                        word = suggestedWords.getWord(i);
+                        break;
+                    }
+                }
+            }
+        }
+        final boolean hold = settingsValues.fieldAllowsComposing() && settingsValues.holdsSwipedWord();
+        if (hold) {
+            // The bar normally leaves out the swiped word (it is in the text field). Held, it isn't, so it needs to be in the bar.
+            mSuggestionStripViewAccessor.setSuggestions(wordsForStrip(word, suggestedWords, SuggestedWords.INPUT_STYLE_NONE));
+        } else if (!word.equals(decodedText)) {
+            // the recognized word is not the word in the text field: suggest what fits the word that is
+            mSuggestionStripViewAccessor.setSuggestions(wordsForStrip(word, suggestedWords, SuggestedWords.INPUT_STYLE_TAIL_BATCH));
+        }
+        if (hold) {
             // Held: the word is only in the word composer and shown in the suggestion bar, not in the text field. It is inserted
             // by flushPendingSwipeWord() before the next input (space, next swipe, ...) is handled, which then commits it as usual.
-            mWordComposer.setBatchInputWord(batchInputText);
+            // (A word that was continued is still in the text field as composing text, and is replaced then.)
+            mWordComposer.setBatchInputWord(word);
             mSwipeWordPending = true;
+            mSwipeWordPendingContinued = continuedWord;
+            mPendingOldText = oldText;
+            mPendingOldPointers = oldPointers;
+            mPendingOldWasBatchMode = oldWasBatchMode;
             keyboardSwitcher.updateShiftState(getCurrentAutoCapsState(settingsValues), getCurrentRecapitalizeState());
             return;
         }
-        insertSwipedWord(settingsValues, batchInputText, keyboardSwitcher);
+        insertSwipedWord(settingsValues, word, keyboardSwitcher);
     }
 
     // ---- a swipe that continues the word that is being typed (Nintype style: tap h, tap e, swipe l to o: hello) ----
@@ -2326,6 +2373,8 @@ public final class InputLogic {
      * The recognizer gets this path followed by the swipe, so it recognizes the whole word. Null if the swipe starts a new word.
      */
     private InputPointers mContinuedWordPrefix = null;
+    private String mContinuedWordText = ""; // the word before the swipe, the letters of the swipe are added to it
+    private InputPointers mContinuedSwipePointers = null; // the points of the swipe only
     // what the word composer had before, to restore it if the swipe is canceled
     private InputPointers mContinuedWordSavedPointers = null;
     private boolean mContinuedWordWasBatchMode = false;
@@ -2371,6 +2420,7 @@ public final class InputLogic {
         final InputPointers prefix = mContinuedWordPrefix;
         final int swipeSize = swipePointers.getPointerSize();
         if (prefix == null || swipeSize == 0) return swipePointers;
+        mContinuedSwipePointers = copyOf(swipePointers);
         final int prefixSize = prefix.getPointerSize();
         final InputPointers combined = new InputPointers(prefixSize + swipeSize);
         final int[] swipeX = swipePointers.getXCoordinates(), swipeY = swipePointers.getYCoordinates();
@@ -2388,6 +2438,7 @@ public final class InputLogic {
     private void cancelContinuedWord() {
         if (mContinuedWordPrefix == null) return;
         mContinuedWordPrefix = null;
+        mContinuedSwipePointers = null;
         if (mContinuedWordSavedPointers != null) {
             mWordComposer.setBatchInputPointers(mContinuedWordSavedPointers);
             if (!mContinuedWordWasBatchMode) mWordComposer.unsetBatchMode();
@@ -2395,8 +2446,114 @@ public final class InputLogic {
         mContinuedWordSavedPointers = null;
     }
 
+    /** the word composer has the word (and points) it had before a swipe continued it */
+    private void restoreComposer(final String text, @Nullable final InputPointers pointers, final boolean wasBatchMode) {
+        if (pointers != null) mWordComposer.setBatchInputPointers(pointers);
+        mWordComposer.setBatchInputWord(text);
+        if (!wasBatchMode) mWordComposer.unsetBatchMode();
+    }
+
+    /**
+     * The letters of a swipe that adds to a word: the keys where it starts, where it ends and where it turns. Keys it only passes
+     * over on the way are not letters (i to m goes over j or k, but the letters are i and m). Double letters can't be seen.
+     */
+    private static String lettersOfSwipe(final InputPointers swipe, final Keyboard keyboard) {
+        final int size = swipe.getPointerSize();
+        if (size == 0) return "";
+        final int[] xs = swipe.getXCoordinates(), ys = swipe.getYCoordinates();
+        final float minStep = Math.max(1, keyboard.mMostCommonKeyWidth) * 0.4f;
+        // the path without points that are very close to the previous one
+        final ArrayList<int[]> path = new ArrayList<>();
+        path.add(new int[] { xs[0], ys[0] });
+        for (int i = 1; i < size; i++) {
+            final int[] last = path.get(path.size() - 1);
+            if (Math.hypot(xs[i] - last[0], ys[i] - last[1]) >= minStep)
+                path.add(new int[] { xs[i], ys[i] });
+        }
+        final int[] end = { xs[size - 1], ys[size - 1] };
+        final int[] lastKept = path.get(path.size() - 1);
+        if (lastKept[0] != end[0] || lastKept[1] != end[1]) {
+            if (path.size() > 1 && Math.hypot(end[0] - lastKept[0], end[1] - lastKept[1]) < minStep)
+                path.set(path.size() - 1, end);
+            else
+                path.add(end);
+        }
+        final StringBuilder letters = new StringBuilder();
+        appendLetterAt(letters, keyboard, path.get(0));
+        for (int i = 1; i < path.size() - 1; i++) {
+            final int[] before = path.get(i - 1), point = path.get(i), after = path.get(i + 1);
+            final double dx1 = point[0] - before[0], dy1 = point[1] - before[1];
+            final double dx2 = after[0] - point[0], dy2 = after[1] - point[1];
+            final double cos = (dx1 * dx2 + dy1 * dy2) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2));
+            if (Math.toDegrees(Math.acos(Math.max(-1, Math.min(1, cos)))) > 55) // a sharp turn: this key is a letter
+                appendLetterAt(letters, keyboard, point);
+        }
+        if (path.size() > 1) appendLetterAt(letters, keyboard, path.get(path.size() - 1));
+        return letters.toString();
+    }
+
+    private static void appendLetterAt(final StringBuilder letters, final Keyboard keyboard, final int[] point) {
+        Key best = null;
+        int bestDistance = Integer.MAX_VALUE;
+        for (final Key key : keyboard.getNearestKeys(point[0], point[1])) {
+            final int code = key.getCode();
+            if (code <= 0 || !Character.isLetter(code)) continue;
+            final int distance = key.squaredDistanceToEdge(point[0], point[1]); // 0 on the key
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = key;
+            }
+        }
+        if (best == null) return;
+        final int letter = Character.toLowerCase(best.getCode());
+        // (a key that is both start and turn is one letter)
+        if (letters.length() == 0 || letters.codePointBefore(letters.length()) != letter)
+            letters.appendCodePoint(letter);
+    }
+
+    /** the word in lower case and without repeated letters: hello and helo are the same */
+    private static String withoutRepeats(final String word) {
+        final StringBuilder result = new StringBuilder();
+        int previous = -1;
+        for (int i = 0; i < word.length(); i = word.offsetByCodePoints(i, 1)) {
+            final int lower = Character.toLowerCase(word.codePointAt(i));
+            if (lower != previous) result.appendCodePoint(lower);
+            previous = lower;
+        }
+        return result.toString();
+    }
+
+    /**
+     * The suggestions to show for a swiped word: the word first (index 0 is the "typed word", which the bar leaves out for swiped
+     * words that are in the text field, and shows in the middle for [INPUT_STYLE_NONE]), then the alternatives of the recognizer.
+     */
+    private SuggestedWords wordsForStrip(final String word, final SuggestedWords recognized, final int inputStyle) {
+        final ArrayList<SuggestedWordInfo> infos = new ArrayList<>();
+        infos.add(new SuggestedWordInfo(word, "", SuggestedWordInfo.MAX_SCORE, SuggestedWordInfo.KIND_TYPED,
+                Dictionary.DICTIONARY_USER_TYPED, SuggestedWordInfo.NOT_AN_INDEX, SuggestedWordInfo.NOT_A_CONFIDENCE));
+        final String lowerWord = word.toLowerCase();
+        for (int i = 0; i < recognized.size(); i++) {
+            final SuggestedWordInfo info = recognized.getInfo(i);
+            // only words that continue this word (for a word that was added to, the recognized words may be about something else)
+            if (!info.mWord.equalsIgnoreCase(word) && info.mWord.toLowerCase().startsWith(lowerWord))
+                infos.add(info);
+        }
+        if (infos.size() < 3) { // not enough that continue the word: other alternatives, so the bar is not empty
+            for (int i = 0; i < recognized.size() && infos.size() < 4; i++) {
+                final SuggestedWordInfo info = recognized.getInfo(i);
+                if (!info.mWord.equalsIgnoreCase(word) && !infos.contains(info)) infos.add(info);
+            }
+        }
+        return new SuggestedWords(infos, null, null, false, false, false, inputStyle, SuggestedWords.NOT_A_SEQUENCE_NUMBER);
+    }
+
     /** The swiped word is held in the suggestion bar (see {@link SettingsValues#holdsSwipedWord()}), nothing is in the text field yet. */
     private boolean mSwipeWordPending = false;
+    // a held word that continues a word: the word before is still in the text field (as composing text) until the held one replaces it
+    private boolean mSwipeWordPendingContinued = false;
+    private String mPendingOldText = "";
+    private InputPointers mPendingOldPointers = null;
+    private boolean mPendingOldWasBatchMode = false;
 
     /**
      * Put the held swiped word into the text field, as it would have been when the swipe ended. Called before anything is done
@@ -2405,6 +2562,7 @@ public final class InputLogic {
     private void flushPendingSwipeWord(final SettingsValues settingsValues) {
         if (!mSwipeWordPending) return;
         mSwipeWordPending = false;
+        mSwipeWordPendingContinued = false;
         final String heldWord = mWordComposer.getTypedWord();
         if (TextUtils.isEmpty(heldWord)) return;
         insertSwipedWord(settingsValues, heldWord, KeyboardSwitcher.getInstance());
@@ -2412,7 +2570,10 @@ public final class InputLogic {
 
     /** The cursor was moved (or the text field changed) while a word was held: it was never in the text, so it is dropped. */
     private void discardPendingSwipeWord() {
+        final boolean continued = mSwipeWordPendingContinued;
         mSwipeWordPending = false;
+        mSwipeWordPendingContinued = false;
+        if (continued) mConnection.finishComposingText(); // the word before the swipe stays in the text field
         resetComposingState(true);
         mSuggestionStripViewAccessor.setNeutralSuggestionStrip();
     }
