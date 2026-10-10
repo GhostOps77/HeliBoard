@@ -60,7 +60,8 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
             KeyboardElement.CLIPBOARD_BOTTOM_ROW -> LayoutType.CLIPBOARD_BOTTOM
             else -> LayoutType.MAIN
         }
-        val baseKeys = LayoutParser.parseLayout(layoutType, params, context)
+        val baseKeys = if (layoutType == LayoutType.DPAD && params.mId.isFloatingHalves) floatingDpadKeys()
+            else LayoutParser.parseLayout(layoutType, params, context)
         val keysInRows = createRows(baseKeys)
         val heightRescale: Float
         if (params.mId.element.isBottomRow) {
@@ -88,6 +89,21 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
         }
 
         return keysInRows
+    }
+
+    /**
+     * D-pad for floating halves (the layout file is only used when docked): 3 rows of 6 equally wide keys, so the split is
+     * exactly between the 3rd and 4th key. Left half: the 4 arrows in the middle of each side, the 4 corners are actions,
+     * the middle is select word. Right half: the remaining keys.
+     */
+    private fun floatingDpadKeys(): MutableList<MutableList<KeyData>> {
+        fun k(label: String, function: Boolean = false): KeyData =
+            TextKeyData(type = if (function) KeyType.FUNCTION else null, label = label, width = 1f / 6f)
+        return mutableListOf(
+            mutableListOf(k("copy", true), k("up"), k("paste", true), k("page_start"), k("select_all", true), k("page_end")),
+            mutableListOf(k("left"), k("select_word", true), k("right"), k("full_left"), k("cut", true), k("full_right")),
+            mutableListOf(k("undo", true), k("down"), k("redo", true), k("word_left"), k("clipboard", true), k("word_right")),
+        )
     }
 
     private fun createRows(baseKeys: MutableList<MutableList<KeyData>>): ArrayList<ArrayList<KeyParams>> {
