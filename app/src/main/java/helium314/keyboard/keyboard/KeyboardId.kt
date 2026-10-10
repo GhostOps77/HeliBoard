@@ -66,7 +66,7 @@ data class KeyboardId(
         params.settingsValues?.mOneHandedModeEnabled ?: false,
         params.internalAction,
         params.emojiSearchAvailable,
-        if (element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED && params.settingsValues?.mIsFloatingHalves == true
+        if (element.canBeFloatingHalves && params.settingsValues?.mIsFloatingHalves == true
             || element == KeyboardElement.EMOJI_BOTTOM_ROW && Settings.getValues().mIsFloatingHalves) // bottom row is built without settingsValues
             HalvesLayout.cacheKey() else 0,
     ) {
@@ -132,6 +132,8 @@ enum class KeyboardElement(val descriptionResId: Int) {
 
     val isAlphabet get() = this < SYMBOLS
     val isAlphaOrSymbol get() = this <= SYMBOLS_SHIFTED
+    /** layouts made of key rows that can be cut in the middle into two floating halves (emoji and clipboard are views, handled separately) */
+    val canBeFloatingHalves get() = this <= SYMBOLS_SHIFTED || this == DPAD || this == NUMPAD
     val isAlphabetShifted get() = isAlphabet && this != ALPHABET
     val isAlphabetShiftedManually get() = this == ALPHABET_MANUAL_SHIFTED || this == ALPHABET_SHIFT_LOCKED
     val isNumberLayout get() = this in NUMPAD..PHONE_SYMBOLS
