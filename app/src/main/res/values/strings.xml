@@ -88,7 +88,7 @@
     <string name="swipe_commit_highlight">Highlight it in the text until space or the next swipe</string>
     <string name="swipe_commit_hold">Hold it in the suggestion bar until space or the next swipe (not in the text yet)</string>
     <string name="halves_dock" tools:keep="@string/halves_dock">Dock / undock halves</string>
-    <string name="halves_dock_unavailable">Turn on \"Floating split halves\" in the appearance settings first</string>
+    <string name="halves_dock_unavailable">Floating halves are only used while the split keyboard is on. Check \"Floating split halves\" in the appearance settings and \"Enable split keyboard\"</string>
     <string name="halves_opacity_slider">Keyboard opacity</string>
     <string name="halves_opacity_unavailable">Opacity can only be changed for floating halves. It can be enabled for all keyboard modes in the appearance settings.</string>
     <string name="floating_halves_summary">Split the keyboard into two halves that can be moved and resized independently. Turn off to dock them back into one keyboard.</string>
