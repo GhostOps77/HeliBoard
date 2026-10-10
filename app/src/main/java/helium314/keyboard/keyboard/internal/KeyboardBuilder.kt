@@ -277,8 +277,10 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
         // map key block (design coordinates of the normal keyboard) to the key area of its panel
         fun transform(keys: Set<KeyParams>, block: RectF, panel: android.graphics.Rect) {
             val area = HalvesLayout.keyArea(panel)
-            // relative to the docked key area (not to this block): with the default panel size, keys have exactly the docked size
-            val sx = area.width() / HalvesLayout.refKeyAreaWidth.toFloat()
+            // each block fills the width of its own panel: the blocks of the two halves are not equally wide (e.g. the right half of
+            // the letters has fewer keys in its widest row), and without this the narrower one leaves empty space at the panel edge
+            val sx = area.width() / block.width().coerceAtLeast(1f)
+            // height is relative to the docked key area (not to this block): with the default panel size, keys have the docked height
             val sy = area.height() / HalvesLayout.refKeyAreaHeight.toFloat()
             for (key in keys) {
                 key.xPos = area.left + (key.xPos - block.left) * sx
