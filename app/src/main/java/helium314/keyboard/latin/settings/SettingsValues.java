@@ -301,7 +301,8 @@ public class SettingsValues {
         mClipboardHistoryRetentionTime = prefs.getInt(Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME, Defaults.PREF_CLIPBOARD_HISTORY_RETENTION_TIME);
         mClipboardHistoryPinnedFirst = prefs.getBoolean(Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST, Defaults.PREF_CLIPBOARD_HISTORY_PINNED_FIRST);
 
-        mFloatingHalvesAvailable = !mIsLocked && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
+        // halves only exist where the "Enable split keyboard" setting says the keyboard is split
+        mFloatingHalvesAvailable = !mIsLocked && mIsSplitKeyboardEnabled && prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES);
         mSwipeContinuesWord = prefs.getString(Settings.PREF_SWIPE_CONTINUES_WORD, Defaults.PREF_SWIPE_CONTINUES_WORD);
         final String swipeCommitMode = prefs.getString(Settings.PREF_SWIPE_COMMIT_MODE, null);
         mSwipeCommitMode = swipeCommitMode != null ? swipeCommitMode // migrate the old on / off setting
