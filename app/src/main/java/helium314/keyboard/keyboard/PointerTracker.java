@@ -17,7 +17,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import helium314.keyboard.event.HapticEvent;
-import helium314.keyboard.keyboard.internal.HalvesGestureReport;
 import helium314.keyboard.keyboard.internal.BatchInputArbiter;
 import helium314.keyboard.keyboard.internal.BatchInputArbiter.BatchInputArbiterListener;
 import helium314.keyboard.keyboard.internal.BogusMoveEventDetector;
@@ -599,7 +598,6 @@ public final class PointerTracker implements PointerTrackerQueue.Element,
             Log.d(TAG, String.format(Locale.US, "[%d] onEndBatchInput   : batchPoints=%d",
                     mPointerId, aggregatedPointers.getPointerSize()));
         }
-        HalvesGestureReport.report(aggregatedPointers); // only in debug mode, with floating halves
         sListener.onEndBatchInput(aggregatedPointers);
     }
 
