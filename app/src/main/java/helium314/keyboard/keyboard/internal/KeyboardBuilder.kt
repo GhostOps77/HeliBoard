@@ -104,7 +104,7 @@ open class KeyboardBuilder<KP : KeyboardParams>(protected val mContext: Context,
     }
 
     open fun build(): Keyboard {
-        if (mParams.mId.isFloatingHalves && mParams.mId.element in KeyboardElement.ALPHABET..KeyboardElement.SYMBOLS_SHIFTED) {
+        if (mParams.mId.isFloatingHalves && mParams.mId.element.canBeFloatingHalves) {
             // two independent floating halves: split the rows like in split mode, then place both blocks in the window
             // same spacer as the docked keyboard has with the user's settings, so the keys get the same size
             addSplit(HalvesLayout.splitSpacerRelativeWidth())
