@@ -12,6 +12,7 @@ import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyData
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyLabel
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyType
+import helium314.keyboard.keyboard.internal.keyboard_parser.floris.PopupSet
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.SimplePopups
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.TextKeyData
 import helium314.keyboard.latin.common.isEmoji
@@ -92,18 +93,23 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
     }
 
     /**
-     * D-pad for floating halves (the layout file is only used when docked): 3 rows of 6 equally wide keys, so the split is
-     * exactly between the 3rd and 4th key. Left half: the 4 arrows in the middle of each side, the 4 corners are actions,
-     * the middle is select word. Right half: the remaining keys, with delete in the middle.
-     * The shift / delete keys next to the last row are not added (see [parseLayout]), so all three rows line up.
+     * D-pad for floating halves (the layout file is only used when docked): 3 rows of 5 equally wide keys, so the split is
+     * exactly between the 3rd and 4th key. The keys and their long-press popups are the same as in the docked d-pad.
+     * Left half: arrows in the middle of each side, the corners are line start, line end, shift and copy, the middle is select word.
+     * Right half: undo, redo, word left / right, paste and delete.
+     * The functional shift / delete keys are not added to this layout (see [parseLayout]), they are part of the grid.
      */
     private fun floatingDpadKeys(): MutableList<MutableList<KeyData>> {
-        fun k(label: String, function: Boolean = false): KeyData =
-            TextKeyData(type = if (function) KeyType.FUNCTION else null, label = label, width = 1f / 6f)
+        fun k(label: String, popup: String? = null, function: Boolean = false): KeyData = TextKeyData(
+            type = if (function) KeyType.FUNCTION else null,
+            label = label,
+            width = 0.2f,
+            popup = if (popup == null) SimplePopups(null) else PopupSet(main = TextKeyData(label = popup)),
+        )
         return mutableListOf(
-            mutableListOf(k("copy", true), k("up"), k("paste", true), k("page_start"), k("select_all", true), k("page_end")),
-            mutableListOf(k("left"), k("select_word", true), k("right"), k("full_left"), k("delete"), k("full_right")),
-            mutableListOf(k("undo", true), k("down"), k("redo", true), k("word_left"), k("cut", true), k("word_right")),
+            mutableListOf(k("full_left", "page_start"), k("up"), k("full_right", "page_end"), k("undo", function = true), k("redo", function = true)),
+            mutableListOf(k("left"), k("select_word", "select_all", true), k("right"), k("word_left"), k("word_right")),
+            mutableListOf(k("shift"), k("down"), k("copy", "cut", true), k("paste", "clipboard", true), k("delete")),
         )
     }
 
