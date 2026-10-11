@@ -94,15 +94,16 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
     /**
      * D-pad for floating halves (the layout file is only used when docked): 3 rows of 6 equally wide keys, so the split is
      * exactly between the 3rd and 4th key. Left half: the 4 arrows in the middle of each side, the 4 corners are actions,
-     * the middle is select word. Right half: the remaining keys.
+     * the middle is select word. Right half: the remaining keys, with delete in the middle.
+     * The shift / delete keys next to the last row are not added (see [parseLayout]), so all three rows line up.
      */
     private fun floatingDpadKeys(): MutableList<MutableList<KeyData>> {
         fun k(label: String, function: Boolean = false): KeyData =
             TextKeyData(type = if (function) KeyType.FUNCTION else null, label = label, width = 1f / 6f)
         return mutableListOf(
             mutableListOf(k("copy", true), k("up"), k("paste", true), k("page_start"), k("select_all", true), k("page_end")),
-            mutableListOf(k("left"), k("select_word", true), k("right"), k("full_left"), k("cut", true), k("full_right")),
-            mutableListOf(k("undo", true), k("down"), k("redo", true), k("word_left"), k("clipboard", true), k("word_right")),
+            mutableListOf(k("left"), k("select_word", true), k("right"), k("full_left"), k("delete"), k("full_right")),
+            mutableListOf(k("undo", true), k("down"), k("redo", true), k("word_left"), k("cut", true), k("word_right")),
         )
     }
 
@@ -129,6 +130,8 @@ class KeyboardParser(private val params: KeyboardParams, private val context: Co
             params.baseKeys = baseKeys.flatMap { row -> row.map { it.toKeyParams(params) } }
 
         val allFunctionalKeys = LayoutParser.parseLayout(LayoutType.FUNCTIONAL, params, context)
+        if (element == KeyboardElement.DPAD && params.mId.isFloatingHalves && allFunctionalKeys.size > 1)
+            allFunctionalKeys.subList(0, allFunctionalKeys.lastIndex).clear() // only the bottom row, delete is part of the d-pad
         adjustBottomFunctionalRowAndBaseKeys(allFunctionalKeys, baseKeys)
 
         if (allFunctionalKeys.none { it.singleOrNull()?.isKeyPlaceholder() == true })
