@@ -95,6 +95,14 @@
         android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:contentDescription="@string/floating_halves" android:scaleType="fitCenter"
         android:src="@drawable/ic_resize_corner" />
+    <ImageView android:id="@+id/halves_grip_left_inner" android:visibility="gone"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:contentDescription="@string/floating_halves" android:scaleType="fitCenter"
+        android:src="@drawable/ic_resize_corner" />
+    <ImageView android:id="@+id/halves_grip_right_inner" android:visibility="gone"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:contentDescription="@string/floating_halves" android:scaleType="fitCenter"
+        android:src="@drawable/ic_resize_corner" />
     <!-- opacity slider for floating halves mode, shown above the left half (see KeyboardFrameLayout) -->
     <LinearLayout android:id="@+id/halves_opacity_bar" android:visibility="gone"
         android:orientation="horizontal" android:gravity="center_vertical"

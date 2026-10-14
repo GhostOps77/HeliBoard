@@ -54,11 +54,14 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     private lateinit var handleRight: ImageView
     private lateinit var gripLeft: ImageView
     private lateinit var gripRight: ImageView
+    // inner bottom corners (next to the other half): bottom right of the left panel, bottom left of the right panel
+    private lateinit var gripLeftInner: ImageView
+    private lateinit var gripRightInner: ImageView
     private lateinit var opacityBar: View
     private lateinit var opacitySeekBar: SeekBar
     private lateinit var opacityValue: TextView
     private val tmpRect = Rect()
-    private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight)
+    private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight, gripLeftInner, gripRightInner)
 
     private val panelOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -93,16 +96,21 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         handleRight = findViewById(R.id.halves_handle_right)
         gripLeft = findViewById(R.id.halves_grip_left)
         gripRight = findViewById(R.id.halves_grip_right)
+        gripLeftInner = findViewById(R.id.halves_grip_left_inner)
+        gripRightInner = findViewById(R.id.halves_grip_right_inner)
         opacityBar = findViewById(R.id.halves_opacity_bar)
         opacitySeekBar = findViewById(R.id.halves_opacity_seekbar)
         opacityValue = findViewById(R.id.halves_opacity_value)
         // the grip icon is drawn for the bottom right corner, the left panel has its grip in the bottom left corner
         gripLeft.scaleX = -1f
+        gripRightInner.scaleX = -1f // the inner grip of the right panel is in its bottom left corner too
         setChildrenDrawingOrderEnabled(true)
         setTouchHandling(handleLeft, HalvesLayout.LEFT, false)
         setTouchHandling(handleRight, HalvesLayout.RIGHT, false)
         setTouchHandling(gripLeft, HalvesLayout.LEFT, true)
         setTouchHandling(gripRight, HalvesLayout.RIGHT, true)
+        setTouchHandling(gripLeftInner, HalvesLayout.LEFT, true, true)
+        setTouchHandling(gripRightInner, HalvesLayout.RIGHT, true, true)
         setupOpacitySlider()
     }
 
@@ -180,7 +188,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         HalvesLayout.loadOpacity(context)
         val alpha = if (opacityAvailable()) HalvesLayout.opacity else 1f
         if (halvesMode)
-            listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = alpha }
+            listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight, gripLeftInner, gripRightInner).forEach { it.alpha = alpha }
         else {
             listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = 1f }
             wrapper.alpha = alpha
@@ -224,7 +232,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
      * (and keeps being a drag), while a finger that went down on a key never reaches a handle (so swipe typing is not disturbed).
      */
     @SuppressLint("ClickableViewAccessibility")
-    private fun setTouchHandling(view: View, half: Int, resize: Boolean) {
+    private fun setTouchHandling(view: View, half: Int, resize: Boolean, inner: Boolean = false) {
         view.setOnTouchListener { v, event ->
             // the emoji palette can only be moved vertically (both halves together), it can't be resized
             if (HalvesLayout.emojiMode && resize) return@setOnTouchListener false
@@ -240,7 +248,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (!interacting) return@setOnTouchListener false
-                    HalvesLayout.interact(half, resize, event.rawX - interactionStartX, event.rawY - interactionStartY)
+                    HalvesLayout.interact(half, resize, event.rawX - interactionStartX, event.rawY - interactionStartY, inner)
                     // layout moves panels, handles, grips and strip, and also triggers an update of the touchable region
                     requestLayout()
                     if (HalvesLayout.emojiMode) KeyboardSwitcher.getInstance().updateEmojiHalvesPlacement()
@@ -266,6 +274,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val visibility = if (halvesMode && !HalvesLayout.emojiMode) VISIBLE else GONE
         gripLeft.visibility = visibility
         gripRight.visibility = visibility
+        gripLeftInner.visibility = visibility
+        gripRightInner.visibility = visibility
         // linked: only the left handle moves the halves (both vertically), the right half has no handle
         handleRight.visibility = if (halvesMode && !HalvesLayout.linked) VISIBLE else GONE
         // the opacity slider takes the place of the left handle while it is shown
@@ -304,7 +314,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             panel.clipToOutline = true
             panel.doOnLayout { colors.setBackground(panel, ColorType.MAIN_BACKGROUND) }
         }
-        listOf(handleLeft, handleRight, gripLeft, gripRight).forEach { colors.setColor(it, ColorType.ONE_HANDED_MODE_BUTTON) }
+        listOf(handleLeft, handleRight, gripLeft, gripRight, gripLeftInner, gripRightInner).forEach { colors.setColor(it, ColorType.ONE_HANDED_MODE_BUTTON) }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -326,6 +336,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         measureExactly(handleRight, tmpRect.width(), tmpRect.height())
         measureExactly(gripLeft, HalvesLayout.gripSize, HalvesLayout.gripSize)
         measureExactly(gripRight, HalvesLayout.gripSize, HalvesLayout.gripSize)
+        measureExactly(gripLeftInner, HalvesLayout.gripSize, HalvesLayout.gripSize)
+        measureExactly(gripRightInner, HalvesLayout.gripSize, HalvesLayout.gripSize)
         if (opacityBar.visibility != GONE && opacityBar.parent === this)
             measureExactly(opacityBar, HalvesLayout.opacityBar.width(), HalvesLayout.opacityBar.height())
     }
@@ -350,6 +362,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val grip = HalvesLayout.gripSize
         gripLeft.layout(HalvesLayout.left.left, HalvesLayout.left.bottom - grip, HalvesLayout.left.left + grip, HalvesLayout.left.bottom)
         gripRight.layout(HalvesLayout.right.right - grip, HalvesLayout.right.bottom - grip, HalvesLayout.right.right, HalvesLayout.right.bottom)
+        // inner bottom corners: bottom right for the left panel, bottom left for the right panel
+        gripLeftInner.layout(HalvesLayout.left.right - grip, HalvesLayout.left.bottom - grip, HalvesLayout.left.right, HalvesLayout.left.bottom)
+        gripRightInner.layout(HalvesLayout.right.left, HalvesLayout.right.bottom - grip, HalvesLayout.right.left + grip, HalvesLayout.right.bottom)
         if (opacityBar.visibility != GONE && opacityBar.parent === this) opacityBar.layout(HalvesLayout.opacityBar)
         floatingHandleContainer.layout(0, 0, 0, 0)
     }

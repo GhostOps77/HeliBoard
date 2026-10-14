@@ -340,25 +340,8 @@ object HalvesLayout {
             userRight.offset(0, userLeft.bottom - userRight.bottom)
             clampPanel(userRight, RIGHT)
         }
-        resolveOverlap()
-    }
-
-    /** the halves never overlap: the left half is always left of the right half, with at least a small gap */
-    private fun resolveOverlap() {
-        var over = userLeft.right + gap - userRight.left
-        if (over <= 0) return
-        val moveLeft = min(over, userLeft.left)
-        userLeft.offset(-moveLeft, 0)
-        over -= moveLeft
-        if (over > 0) {
-            val moveRight = min(over, windowWidth - userRight.right)
-            userRight.offset(moveRight, 0)
-            over -= moveRight
-        }
-        if (over > 0) { // both are at the window edges, so they need to get narrower
-            userLeft.right -= over / 2
-            userRight.left += over - over / 2
-        }
+        // no check for overlapping halves here: they can only overlap if the user resized one over the other (inner grip),
+        // and then that layout is kept. Moving a half (see interact) still never moves it over the other one.
     }
 
     /** bring [r] to a valid size (minimum key size, window) and move it into the window */
@@ -457,10 +440,11 @@ object HalvesLayout {
     /**
      * Move ([resize] false) or resize one half. [dx] and [dy] are relative to the position at [beginInteraction].
      * Resizing moves the outer bottom corner (bottom left for the left half, bottom right for the right half),
-     * the opposite corner stays where it is.
+     * the opposite corner stays where it is. With [inner] it moves the inner bottom corner instead (bottom right for the left half,
+     * bottom left for the right half), without any limit against the other half: the halves may overlap then.
      */
     @JvmStatic
-    fun interact(half: Int, resize: Boolean, dx: Float, dy: Float) {
+    fun interact(half: Int, resize: Boolean, dx: Float, dy: Float, inner: Boolean = false) {
         if (emojiMode) {
             // emoji palette: only vertical, both halves together (its panels are derived from the layout of the letters)
             if (resize) return
@@ -504,7 +488,8 @@ object HalvesLayout {
             )
         } else {
             r.bottom = (startRect.bottom + dy).toInt().coerceIn(min(startRect.top + minH, maxBottom()), maxBottom())
-            if (half == LEFT) r.left = (startRect.left + dx).toInt().coerceIn(0, max(0, startRect.right - minW))
+            val movesLeftEdge = (half == LEFT) != inner // outer grip: left edge of the left half, right edge of the right half
+            if (movesLeftEdge) r.left = (startRect.left + dx).toInt().coerceIn(0, max(0, startRect.right - minW))
             else r.right = (startRect.right + dx).toInt().coerceIn(min(startRect.left + minW, windowWidth), windowWidth)
         }
         target.set(r)
