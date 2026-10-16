@@ -409,10 +409,10 @@ public final class KeyboardSwitcher {
         reloadKeyboard();
     }
 
-    /** toolbar key: show / hide the opacity slider of the floating halves */
+    /** toolbar key: show / hide the opacity slider (floating halves, standard floating keyboard, or everywhere if enabled) */
     public void toggleHalvesOpacityBar() {
         if (mCurrentInputView == null) return;
-        if (!mFloatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
+        if (!mFloatingHalvesActive && !Settings.getValues().mIsFloatingKeyboard && !Settings.getValues().mOpacityEverywhere) {
             showToast(mLatinIME.getString(R.string.halves_opacity_unavailable), true);
             return;
         }
