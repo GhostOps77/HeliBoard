@@ -143,11 +143,11 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         setOpacityBarVisible(true)
     }
 
-    private fun opacityAvailable() = halvesMode || Settings.getValues().mOpacityEverywhere
+    private fun opacityAvailable() = halvesMode || Settings.getValues().let { it.mIsFloatingKeyboard || it.mOpacityEverywhere }
 
     /**
-     * Show or hide the opacity slider. With floating halves it replaces the drag handle of the left half; in the normal
-     * keyboard (if opacity is enabled for all modes) it replaces the content of the toolbar / suggestion strip.
+     * Show or hide the opacity slider. With floating halves it replaces the drag handle of the left half; in the standard floating keyboard
+     * (always) and in the normal keyboard (if opacity is enabled for all modes) it replaces the content of the toolbar / suggestion strip.
      */
     fun setOpacityBarVisible(visible: Boolean) {
         HalvesLayout.loadOpacity(context)
@@ -182,7 +182,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     /**
      * The keyboard (panels / background, keys, handles and grips) and the toolbar / suggestion / emoji category strip are
      * see-through, but never invisible.
-     * Floating halves always use the saved opacity, the normal keyboard only if the opacity is enabled for all keyboard modes.
+     * Floating halves and the standard floating keyboard always use the saved opacity, the docked keyboard only if the opacity is enabled for all keyboard modes.
      */
     fun applyOpacity() {
         HalvesLayout.loadOpacity(context)
