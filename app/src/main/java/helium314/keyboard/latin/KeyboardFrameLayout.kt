@@ -115,6 +115,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     }
 
     private fun setupOpacitySlider() {
+        // The slider covers the toolbar key, so the droplet icon in the slider is the key that hides it again.
+        opacityBar.findViewById<View>(R.id.halves_opacity_icon).setOnClickListener { setOpacityBarVisible(false) }
         opacitySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
