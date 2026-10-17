@@ -155,7 +155,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.FULL_RIGHT -> R.drawable.ic_to_end
                     ToolbarKey.PAGE_START -> R.drawable.ic_page_start
                     ToolbarKey.PAGE_END -> R.drawable.ic_page_end
-                    ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
+                    ToolbarKey.SPLIT -> R.drawable.ic_split_keyboard
                     ToolbarKey.HALVES_OPACITY -> R.drawable.ic_opacity
                     ToolbarKey.HALVES_DOCK -> R.drawable.ic_dock_halves
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
@@ -221,7 +221,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.FULL_RIGHT -> R.drawable.ic_to_end
                     ToolbarKey.PAGE_START -> R.drawable.ic_page_start
                     ToolbarKey.PAGE_END -> R.drawable.ic_page_end
-                    ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
+                    ToolbarKey.SPLIT -> R.drawable.ic_split_keyboard
                     ToolbarKey.HALVES_OPACITY -> R.drawable.ic_opacity
                     ToolbarKey.HALVES_DOCK -> R.drawable.ic_dock_halves
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
@@ -287,7 +287,7 @@ class KeyboardIconsSet private constructor() {
                     ToolbarKey.FULL_RIGHT -> R.drawable.ic_to_end_rounded
                     ToolbarKey.PAGE_START -> R.drawable.ic_page_start_rounded
                     ToolbarKey.PAGE_END -> R.drawable.ic_page_end_rounded
-                    ToolbarKey.SPLIT -> R.drawable.ic_ime_switcher
+                    ToolbarKey.SPLIT -> R.drawable.ic_split_keyboard
                     ToolbarKey.HALVES_OPACITY -> R.drawable.ic_opacity
                     ToolbarKey.HALVES_DOCK -> R.drawable.ic_dock_halves
                     ToolbarKey.BACKGROUND_GATHERING -> R.drawable.ic_settings_gesture
