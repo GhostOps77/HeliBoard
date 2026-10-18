@@ -1151,6 +1151,13 @@ public class LatinIME extends InputMethodService implements
                 touchTop = xy.component2();
                 touchRight = touchLeft + mSettings.getCurrent().mFloatingWidth;
                 touchBottom = touchTop + inputHeight;
+                if (HalvesLayout.opacityBarVisible) {
+                    // a touch anywhere hides the opacity slider (see InputView.setOutsideTouchDismiss)
+                    touchLeft = 0;
+                    touchTop = 0;
+                    touchRight = getResources().getDisplayMetrics().widthPixels;
+                    touchBottom = getResources().getDisplayMetrics().heightPixels;
+                }
             }
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION;
             outInsets.touchableRegion.set(touchLeft, touchTop, touchRight, touchBottom);
