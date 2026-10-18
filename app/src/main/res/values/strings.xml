@@ -68,8 +68,6 @@
     <string name="enable_split_keyboard">Enable split keyboard</string>
     <!-- Option for two independent floating keyboard halves -->
     <string name="floating_halves">Floating split halves</string>
-    <string name="floating_halves_dock">Dock halves</string>
-    <string name="floating_halves_dock_summary">Use one normal keyboard instead of the two floating halves. The layout key in the toolbar switches this as well.</string>
     <string name="floating_halves_reset">Reset halves layout</string>
     <string name="floating_halves_reset_summary">Move both halves back to their default position and size, for portrait and landscape.</string>
     <string name="floating_halves_reset_done">Halves layout reset</string>
