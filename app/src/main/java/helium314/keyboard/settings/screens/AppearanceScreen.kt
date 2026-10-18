@@ -75,7 +75,6 @@ fun AppearanceScreen(
         R.string.settings_category_miscellaneous,
         Settings.PREF_FLOATING_HALVES,
         Settings.PREF_OPACITY_EVERYWHERE,
-        if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_DOCKED else null,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_STRIP else null,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_RESET else null,
         Settings.PREF_ENABLE_SPLIT_KEYBOARD,
@@ -219,13 +218,15 @@ fun createAppearanceSettings(context: Context) = listOf(
         BackgroundImagePref(it, true)
     },
     Setting(context, Settings.PREF_FLOATING_HALVES, R.string.floating_halves, R.string.floating_halves_summary) {
-        SwitchPreference(it, Defaults.PREF_FLOATING_HALVES) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+        val ctx = LocalContext.current
+        SwitchPreference(it, Defaults.PREF_FLOATING_HALVES) {
+            // turning the halves on or off always starts undocked (the toolbar key can dock them, there is no setting for that)
+            ctx.prefs().edit { putBoolean(Settings.PREF_FLOATING_HALVES_DOCKED, Defaults.PREF_FLOATING_HALVES_DOCKED) }
+            KeyboardSwitcher.getInstance().setThemeNeedsReload()
+        }
     },
     Setting(context, Settings.PREF_OPACITY_EVERYWHERE, R.string.opacity_everywhere, R.string.opacity_everywhere_summary) {
         SwitchPreference(it, Defaults.PREF_OPACITY_EVERYWHERE) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
-    },
-    Setting(context, Settings.PREF_FLOATING_HALVES_DOCKED, R.string.floating_halves_dock, R.string.floating_halves_dock_summary) {
-        SwitchPreference(it, Defaults.PREF_FLOATING_HALVES_DOCKED) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_FLOATING_HALVES_STRIP, R.string.floating_halves_strip) { setting ->
         val items = listOf(
