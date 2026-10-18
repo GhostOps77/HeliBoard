@@ -225,7 +225,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         listOf(R.id.resize_handle, R.id.drag_handle, R.id.floating_opacity_button).forEach {
             floatingHandleContainer.findViewById<View>(it)?.alpha = if (floatingNow) alpha else 1f
         }
-        opacityValue.text = "${(alpha * 100).toInt()}%"
+        val valueText = "${(alpha * 100).toInt()}%"
+        if (opacityValue.text.toString() != valueText) opacityValue.text = valueText // setText requests a layout
     }
 
     /** a touch anywhere except on the slider or on an opacity button hides the slider; the touch itself is handled as usual (e.g. a key press) */
@@ -367,6 +368,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         view.measure(MeasureSpec.makeMeasureSpec(width.coerceAtLeast(0), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height.coerceAtLeast(0), MeasureSpec.EXACTLY))
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        // The opacity depends on the mode (docked, floating, halves) and is also reset when views are replaced, and not every
+        // way of switching modes calls applyOpacity. Doing it here keeps it right; unchanged values do nothing.
+        applyOpacity()
         if (!halvesMode) {
             super.onLayout(changed, l, t, r, b)
             return
