@@ -211,11 +211,17 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             background?.mutate()?.alpha = (alpha * 255).toInt()
         }
         // The toolbar, suggestions, emoji categories and clipboard strip are in the strip container: fade each of its views.
+        val floatingNow = !halvesMode && opacityAvailable()
         (strip as? ViewGroup)?.let { container ->
-            for (i in 0 until container.childCount) container.getChildAt(i).alpha = alpha
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                child.alpha = alpha
+                // in the standard floating keyboard the strip has no background of its own: the keyboard background below is
+                // already see-through, a second see-through layer made the strip look different from the keys and the bottom row
+                child.background?.mutate()?.alpha = if (floatingNow) 0 else 255
+            }
         }
         // the icons in the bottom row of the standard floating keyboard
-        val floatingNow = !halvesMode && opacityAvailable()
         listOf(R.id.resize_handle, R.id.drag_handle, R.id.floating_opacity_button).forEach {
             floatingHandleContainer.findViewById<View>(it)?.alpha = if (floatingNow) alpha else 1f
         }
