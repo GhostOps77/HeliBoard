@@ -214,6 +214,11 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         (strip as? ViewGroup)?.let { container ->
             for (i in 0 until container.childCount) container.getChildAt(i).alpha = alpha
         }
+        // the icons in the bottom row of the standard floating keyboard
+        val floatingNow = !halvesMode && opacityAvailable()
+        listOf(R.id.resize_handle, R.id.drag_handle, R.id.floating_opacity_button).forEach {
+            floatingHandleContainer.findViewById<View>(it)?.alpha = if (floatingNow) alpha else 1f
+        }
         opacityValue.text = "${(alpha * 100).toInt()}%"
     }
 
