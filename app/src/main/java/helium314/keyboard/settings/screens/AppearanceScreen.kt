@@ -74,7 +74,6 @@ fun AppearanceScreen(
         SettingsWithoutKey.BACKGROUND_IMAGE_LANDSCAPE,
         R.string.settings_category_miscellaneous,
         Settings.PREF_FLOATING_HALVES,
-        Settings.PREF_OPACITY_EVERYWHERE,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_STRIP else null,
         if (prefs.getBoolean(Settings.PREF_FLOATING_HALVES, Defaults.PREF_FLOATING_HALVES)) Settings.PREF_FLOATING_HALVES_RESET else null,
         Settings.PREF_ENABLE_SPLIT_KEYBOARD,
@@ -224,9 +223,6 @@ fun createAppearanceSettings(context: Context) = listOf(
             ctx.prefs().edit { putBoolean(Settings.PREF_FLOATING_HALVES_DOCKED, Defaults.PREF_FLOATING_HALVES_DOCKED) }
             KeyboardSwitcher.getInstance().setThemeNeedsReload()
         }
-    },
-    Setting(context, Settings.PREF_OPACITY_EVERYWHERE, R.string.opacity_everywhere, R.string.opacity_everywhere_summary) {
-        SwitchPreference(it, Defaults.PREF_OPACITY_EVERYWHERE) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
     },
     Setting(context, Settings.PREF_FLOATING_HALVES_STRIP, R.string.floating_halves_strip) { setting ->
         val items = listOf(

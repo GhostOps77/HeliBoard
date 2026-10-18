@@ -132,8 +132,9 @@ object HalvesLayout {
     // ---- opacity ----
     @JvmField var opacity = 1f
     private var opacityLoaded = false
-    /** the slider for the opacity, shown above the left half (where its toolbar would be) */
+    /** the slider for the opacity, shown in the top row of the left half (where its drag handle is) */
     @JvmField val opacityBar = Rect()
+    /** the opacity slider is shown (in the halves or in the standard floating keyboard) */
     @JvmField var opacityBarVisible = false
 
     // ---- interaction (drag / resize) ----
@@ -407,6 +408,12 @@ object HalvesLayout {
         } else {
             out.set(right.left, right.top, right.left + min(handleWidth, right.width()), right.top + handleHeight)
         }
+    }
+
+    /** the opacity button: a square at the inner end of the top row of the left half (the slider replaces the rest of the row) */
+    @JvmStatic
+    fun opacityButtonRect(out: Rect) {
+        out.set(left.right - handleHeight, left.top, left.right, left.top + handleHeight)
     }
 
     /** the area that should receive touches, everything else goes to the app below */

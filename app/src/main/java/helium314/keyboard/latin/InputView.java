@@ -111,15 +111,22 @@ public final class InputView extends FrameLayout {
 
     private boolean mFloatingHalvesActive = false;
 
-    /** show or hide the opacity slider of the floating halves (above the left half) */
-    public void toggleHalvesOpacityBar() {
-        final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
-        frame.toggleOpacityBar();
-    }
-
     public void hideHalvesOpacityBar() {
         final KeyboardFrameLayout frame = findViewById(R.id.main_keyboard_frame);
         frame.setOpacityBarVisible(false);
+    }
+
+    /**
+     * Standard floating keyboard: while the opacity slider is shown, a touch next to the keyboard (which hits the window, but
+     * not this view) hides it. The touch is not passed on to the app.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    public void setOutsideTouchDismiss(final boolean enabled) {
+        if (!(getParent() instanceof View outer)) return;
+        outer.setOnTouchListener(enabled ? (v, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) hideHalvesOpacityBar();
+            return false;
+        } : null);
     }
 
     /**
