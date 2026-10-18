@@ -251,13 +251,15 @@ object HalvesLayout {
     private fun applyStates() {
         if (windowWidth <= 0 || windowHeight <= 0 || refKeyAreaWidth <= 0 || refKeyAreaHeight <= 0) return
         val s = states[orientation] ?: defaultStates() // not saved: always follows the settings, e.g. side padding
+        // the height is always the one of the keyboard height setting, only the width can be changed
+        val panelHeight = refPanelHeight
         val leftWidth = (refPanelWidth * s[0].widthFactor).toInt()
-        val leftHeight = (refPanelHeight * s[0].heightFactor).toInt()
+        val leftHeight = panelHeight
         val leftX = (s[0].edge * windowWidth).toInt()
         val leftBottom = (s[0].bottom * windowHeight).toInt()
         userLeft.set(leftX, leftBottom - leftHeight, leftX + leftWidth, leftBottom)
         val rightWidth = (refPanelWidth * s[1].widthFactor).toInt()
-        val rightHeight = (refPanelHeight * s[1].heightFactor).toInt()
+        val rightHeight = panelHeight
         val rightX = (s[1].edge * windowWidth).toInt()
         val rightBottom = (s[1].bottom * windowHeight).toInt()
         userRight.set(rightX - rightWidth, rightBottom - rightHeight, rightX, rightBottom)
@@ -269,7 +271,7 @@ object HalvesLayout {
         if (refKeyAreaWidth <= 0 || refKeyAreaHeight <= 0) return
         fun state(r: Rect, edge: Int) = HalfState(
             edge / windowWidth.toFloat(), r.bottom / windowHeight.toFloat(),
-            r.width() / refPanelWidth.toFloat(), r.height() / refPanelHeight.toFloat()
+            r.width() / refPanelWidth.toFloat(), 1f // the height is not saved (see applyStates)
         )
         states[orientation] = arrayOf(state(userLeft, userLeft.left), state(userRight, userRight.right))
     }
@@ -340,8 +342,22 @@ object HalvesLayout {
             userRight.offset(0, userLeft.bottom - userRight.bottom)
             clampPanel(userRight, RIGHT)
         }
-        // no check for overlapping halves here: they can only overlap if the user resized one over the other (inner grip),
-        // and then that layout is kept. Moving a half (see interact) still never moves it over the other one.
+        resolveOverlap()
+    }
+
+    /**
+     * The halves never overlap: if they do (e.g. a saved width that doesn't fit any more after a settings change) the left half
+     * gets narrower first, then the right one, but never below the minimum width.
+     */
+    private fun resolveOverlap() {
+        var over = userLeft.right + gap - userRight.left
+        if (over <= 0) return
+        val shrinkLeft = min(over, max(0, userLeft.width() - minWidthLeft))
+        userLeft.right -= shrinkLeft
+        over -= shrinkLeft
+        if (over <= 0) return
+        val shrinkRight = min(over, max(0, userRight.width() - minWidthRight))
+        userRight.left += shrinkRight
     }
 
     /** bring [r] to a valid size (minimum key size, window) and move it into the window */
@@ -438,13 +454,12 @@ object HalvesLayout {
     }
 
     /**
-     * Move ([resize] false) or resize one half. [dx] and [dy] are relative to the position at [beginInteraction].
-     * Resizing moves the outer bottom corner (bottom left for the left half, bottom right for the right half),
-     * the opposite corner stays where it is. With [inner] it moves the inner bottom corner instead (bottom right for the left half,
-     * bottom left for the right half), without any limit against the other half: the halves may overlap then.
+     * Move ([resize] false) or change the width of one half. [dx] and [dy] are relative to the position at [beginInteraction].
+     * Resizing only changes the width (the height always follows the keyboard height setting): the inner edge moves (right edge
+     * of the left half, left edge of the right half), the outer edge stays where it is. It stops at the other half.
      */
     @JvmStatic
-    fun interact(half: Int, resize: Boolean, dx: Float, dy: Float, inner: Boolean = false) {
+    fun interact(half: Int, resize: Boolean, dx: Float, dy: Float) {
         if (emojiMode) {
             // emoji palette: only vertical, both halves together (its panels are derived from the layout of the letters)
             if (resize) return
@@ -463,7 +478,6 @@ object HalvesLayout {
         val target = if (half == LEFT) userLeft else userRight
         val r = Rect(startRect)
         val minW = (if (half == LEFT) minWidthLeft else minWidthRight).coerceAtMost(windowWidth)
-        val minH = minHeightPanel.coerceAtMost(max(1, maxBottom() - topLimit()))
         if (!resize && linked && half == LEFT) {
             // linked: only vertical, and the right half moves along (without leaving the window either)
             val minDy = max(topLimit() - startRect.top, topLimit() - startRectOther.top)
@@ -487,10 +501,14 @@ object HalvesLayout {
                 (startRect.top + dy).toInt().coerceIn(topLimit(), max(topLimit(), maxBottom() - startRect.height()))
             )
         } else {
-            r.bottom = (startRect.bottom + dy).toInt().coerceIn(min(startRect.top + minH, maxBottom()), maxBottom())
-            val movesLeftEdge = (half == LEFT) != inner // outer grip: left edge of the left half, right edge of the right half
-            if (movesLeftEdge) r.left = (startRect.left + dx).toInt().coerceIn(0, max(0, startRect.right - minW))
-            else r.right = (startRect.right + dx).toInt().coerceIn(min(startRect.left + minW, windowWidth), windowWidth)
+            if (half == RIGHT) {
+                val minLeft = userLeft.right + gap // never overlapping the left half
+                r.left = (startRect.left + dx).toInt().coerceIn(minLeft, max(minLeft, startRect.right - minW))
+            } else {
+                val maxRight = userRight.left - gap // never overlapping the right half
+                val minRight = min(startRect.left + minW, maxRight)
+                r.right = (startRect.right + dx).toInt().coerceIn(minRight, max(minRight, maxRight))
+            }
         }
         target.set(r)
         updateActive()
