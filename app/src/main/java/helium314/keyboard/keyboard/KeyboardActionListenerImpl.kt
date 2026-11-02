@@ -281,6 +281,10 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     }
 
     override fun resetMetaState() {
+        // not only the Android metaState, also the per-key states and the pressed look of the keys,
+        // otherwise a meta key (e.g. ctrl) can stay active, and pressing it again seems to do nothing
+        metaPressStates.forEach { key, _ -> keyboardSwitcher.mainKeyboardView?.updateLockState(key, false) }
+        metaPressStates.clear()
         metaState = 0
     }
 
