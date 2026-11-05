@@ -260,6 +260,13 @@ class KeyboardSwitcher private constructor() {
                 touchTop = xy.second
                 touchRight = touchLeft + Settings.getValues().mFloatingWidth
                 touchBottom = touchTop + inputHeight
+                if (HalvesLayout.opacityBarVisible) {
+                    // a touch anywhere hides the opacity slider (see InputView.setOutsideTouchDismiss)
+                    touchLeft = 0
+                    touchTop = 0
+                    touchRight = themeContext.resources.displayMetrics.widthPixels
+                    touchBottom = themeContext.resources.displayMetrics.heightPixels
+                }
             }
             outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION
             outInsets.touchableRegion.set(touchLeft, touchTop, touchRight, touchBottom)
@@ -348,16 +355,6 @@ class KeyboardSwitcher private constructor() {
     /** the emoji palette's halves are being moved: put the palette where they are now */
     fun updateEmojiHalvesPlacement() {
         if (emojiHalvesPlaced) applyEmojiHalvesPlacement(true)
-    }
-
-    /** toolbar key: show / hide the opacity slider of the floating halves */
-    fun toggleHalvesOpacityBar() {
-        val root = inputView?.root ?: return
-        if (!floatingHalvesActive && !Settings.getValues().mOpacityEverywhere) {
-            showToast(latinIME.getString(R.string.halves_opacity_unavailable), true)
-            return
-        }
-        root.toggleHalvesOpacityBar()
     }
 
     /** toolbar key: dock the floating halves into one normal keyboard, or release them again */

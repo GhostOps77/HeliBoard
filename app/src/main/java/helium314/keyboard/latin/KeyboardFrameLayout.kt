@@ -11,14 +11,13 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.content.res.ColorStateList
-import android.os.SystemClock
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.MainKeyboardView
 import helium314.keyboard.keyboard.internal.HalvesLayout
@@ -55,11 +54,14 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     // width grips in the inner bottom corners: bottom right of the left panel, bottom left of the right panel
     private lateinit var gripLeft: ImageView
     private lateinit var gripRight: ImageView
+    // opacity button of the halves (top row of the left half) and of the standard floating keyboard (its bottom row)
+    private lateinit var opacityButtonHalves: ImageView
+    private lateinit var opacityButtonFloating: View
     private lateinit var opacityBar: View
     private lateinit var opacitySeekBar: SeekBar
     private lateinit var opacityValue: TextView
     private val tmpRect = Rect()
-    private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight)
+    private val halvesViews get() = listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight, opacityButtonHalves)
 
     private val panelOutline = object : ViewOutlineProvider() {
         override fun getOutline(view: View, outline: Outline) {
@@ -94,6 +96,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         handleRight = findViewById(R.id.halves_handle_right)
         gripLeft = findViewById(R.id.halves_grip_left)
         gripRight = findViewById(R.id.halves_grip_right)
+        opacityButtonHalves = findViewById(R.id.halves_opacity_button)
+        opacityButtonFloating = findViewById(R.id.floating_opacity_button)
         opacityBar = findViewById(R.id.halves_opacity_bar)
         opacitySeekBar = findViewById(R.id.halves_opacity_seekbar)
         opacityValue = findViewById(R.id.halves_opacity_value)
@@ -106,53 +110,72 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     }
 
     private fun setupOpacitySlider() {
+        opacityButtonHalves.setOnClickListener { toggleOpacityBar() }
+        opacityButtonFloating.setOnClickListener { toggleOpacityBar() }
         opacitySeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
                 // never completely transparent: the slider starts at the minimum opacity
                 HalvesLayout.setOpacity(context, HalvesLayout.MIN_OPACITY + progress / 100f, false)
                 applyOpacity()
+                restartAutoHide()
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar) { restartAutoHide() }
             override fun onStopTrackingTouch(seekBar: SeekBar) {
                 HalvesLayout.setOpacity(context, HalvesLayout.opacity, true)
+                restartAutoHide()
             }
         })
     }
 
-    private var lastOpacityBarDismiss = 0L
+    private val autoHideOpacityBar = Runnable { setOpacityBarVisible(false) }
 
-    /** toolbar key: show or hide the slider */
-    fun toggleOpacityBar() {
-        if (opacityBar.visibility == VISIBLE) {
-            setOpacityBarVisible(false)
-            return
-        }
-        // A touch outside of the slider hides it when the finger goes down, which is before a click on the toolbar key is
-        // completed. Without this check the key would hide the slider and then immediately show it again.
-        if (SystemClock.uptimeMillis() - lastOpacityBarDismiss < 600) return
-        setOpacityBarVisible(true)
+    /** the slider hides itself when it is not used for a while */
+    private fun restartAutoHide() {
+        removeCallbacks(autoHideOpacityBar)
+        if (opacityBar.visibility == VISIBLE) postDelayed(autoHideOpacityBar, OPACITY_BAR_TIMEOUT_MS)
     }
 
-    private fun opacityAvailable() = halvesMode || Settings.getValues().mOpacityEverywhere
+    override fun onDetachedFromWindow() {
+        removeCallbacks(autoHideOpacityBar)
+        super.onDetachedFromWindow()
+    }
+
+    /** opacity button: show or hide the slider */
+    fun toggleOpacityBar() = setOpacityBarVisible(opacityBar.visibility != VISIBLE)
+
+    /** The opacity can be changed for the floating halves and the standard floating keyboard, the docked keyboard is never see-through. */
+    private fun opacityAvailable() = halvesMode || Settings.getValues().mIsFloatingKeyboard
 
     /**
-     * Show or hide the opacity slider. With floating halves it replaces the drag handle of the left half; in the normal
-     * keyboard (if opacity is enabled for all modes) it replaces the content of the toolbar / suggestion strip.
+     * Show or hide the opacity slider. With floating halves it replaces the drag handle of the left half (the opacity button
+     * stays at the end of that row); in the standard floating keyboard it replaces the resize and drag handles in the bottom row
+     * (next to the opacity button).
      */
     fun setOpacityBarVisible(visible: Boolean) {
         HalvesLayout.loadOpacity(context)
         val show = visible && opacityAvailable()
-        val parent: ViewGroup = if (halvesMode) this else strip as ViewGroup
+        val floating = !halvesMode
+        val parent: ViewGroup = if (floating) floatingHandleContainer as ViewGroup else this
         if (opacityBar.parent !== parent) {
             (opacityBar.parent as? ViewGroup)?.removeView(opacityBar)
-            if (parent === this) addView(opacityBar, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
-            else parent.addView(opacityBar, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            if (floating) {
+                val height = resources.getDimensionPixelSize(R.dimen.config_floating_handle_height)
+                parent.addView(opacityBar, 0, LinearLayout.LayoutParams(0, height, 2f))
+            } else addView(opacityBar, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         }
-        HalvesLayout.opacityBarVisible = show && halvesMode // only used for the touchable region of the halves
+        // The slider leaves room for the button at the end of its row (halves). A touch anywhere else hides it, so the whole window
+        // has to be touchable while it is shown (see HalvesLayout.fillTouchableRegion and LatinIME.onComputeInsets).
+        val padding = (8 * resources.displayMetrics.density).toInt()
+        opacityBar.setPaddingRelative(padding, 0, if (halvesMode) HalvesLayout.handleHeight + padding else padding, 0)
+        HalvesLayout.opacityBarVisible = show
         opacityBar.visibility = if (show) VISIBLE else GONE
         // with floating halves the slider is in the place of the drag handle of the left half (and has its upper corners)
         handleLeft.visibility = if (halvesMode && !show) VISIBLE else GONE
+        if (floating) {
+            floatingHandleContainer.findViewById<View>(R.id.resize_handle)?.visibility = if (show) GONE else VISIBLE
+            floatingHandleContainer.findViewById<View>(R.id.drag_handle)?.visibility = if (show) GONE else VISIBLE
+        }
         opacityBar.outlineProvider = if (halvesMode) topRoundedOutline else ViewOutlineProvider.BACKGROUND
         opacityBar.clipToOutline = halvesMode
         opacityBar.invalidateOutline()
@@ -161,48 +184,68 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             colors.setBackground(opacityBar, ColorType.STRIP_BACKGROUND)
             val textColor = colors.get(ColorType.KEY_TEXT)
             opacityValue.setTextColor(textColor)
-            colors.setColor(opacityBar.findViewById<ImageView>(R.id.halves_opacity_icon), ColorType.KEY_TEXT)
             opacitySeekBar.progressTintList = ColorStateList.valueOf(textColor)
             opacitySeekBar.thumbTintList = ColorStateList.valueOf(textColor)
             opacitySeekBar.progress = ((HalvesLayout.opacity - HalvesLayout.MIN_OPACITY) * 100).toInt()
         }
+        // touches outside of the keyboard (not in this frame) also have to hide the slider in the standard floating keyboard
+        (this.parent as? InputView)?.setOutsideTouchDismiss(show && floating)
+        restartAutoHide()
         applyOpacity()
         requestLayout() // also updates the touchable region
     }
 
     /**
-     * The keyboard (panels / background, keys, handles and grips) is see-through, but never invisible. The toolbar stays opaque.
-     * Floating halves always use the saved opacity, the normal keyboard only if the opacity is enabled for all keyboard modes.
+     * The keyboard (panels / background, keys, handles and grips) and the toolbar / suggestion / emoji category strip are
+     * see-through, but never invisible.
+     * Floating halves and the standard floating keyboard use the saved opacity (the same one), the docked keyboard is never see-through.
      */
     fun applyOpacity() {
         HalvesLayout.loadOpacity(context)
         val alpha = if (opacityAvailable()) HalvesLayout.opacity else 1f
         if (halvesMode)
-            listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = alpha }
+            listOf(panelLeft, panelRight, wrapper, handleLeft, handleRight, gripLeft, gripRight, opacityButtonHalves).forEach { it.alpha = alpha }
         else {
             listOf(panelLeft, panelRight, handleLeft, handleRight, gripLeft, gripRight).forEach { it.alpha = 1f }
             wrapper.alpha = alpha
             background?.mutate()?.alpha = (alpha * 255).toInt()
         }
-        opacityValue.text = "${(alpha * 100).toInt()}%"
+        // The toolbar, suggestions, emoji categories and clipboard strip are in the strip container: fade each of its views.
+        val floatingNow = !halvesMode && opacityAvailable()
+        (strip as? ViewGroup)?.let { container ->
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                child.alpha = alpha
+                // in the standard floating keyboard the strip has no background of its own: the keyboard background below is
+                // already see-through, a second see-through layer made the strip look different from the keys and the bottom row
+                child.background?.mutate()?.alpha = if (floatingNow) 0 else 255
+            }
+        }
+        // the icons in the bottom row of the standard floating keyboard
+        listOf(R.id.resize_handle, R.id.drag_handle, R.id.floating_opacity_button).forEach {
+            floatingHandleContainer.findViewById<View>(it)?.alpha = if (floatingNow) alpha else 1f
+        }
+        val valueText = "${(alpha * 100).toInt()}%"
+        if (opacityValue.text.toString() != valueText) opacityValue.text = valueText // setText requests a layout
     }
 
-    /** a touch anywhere except on the slider hides it; the touch itself is handled as usual (e.g. a key press) */
+    /** a touch anywhere except on the slider or on an opacity button hides the slider; the touch itself is handled as usual (e.g. a key press) */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (opacityBar.visibility == VISIBLE && (ev.actionMasked == MotionEvent.ACTION_DOWN || ev.actionMasked == MotionEvent.ACTION_POINTER_DOWN)) {
             val frameLocation = IntArray(2)
-            val barLocation = IntArray(2)
             getLocationOnScreen(frameLocation)
-            opacityBar.getLocationOnScreen(barLocation)
             val x = frameLocation[0] + ev.getX(ev.actionIndex)
             val y = frameLocation[1] + ev.getY(ev.actionIndex)
-            val inside = x >= barLocation[0] && x < barLocation[0] + opacityBar.width && y >= barLocation[1] && y < barLocation[1] + opacityBar.height
-            if (!inside) {
-                lastOpacityBarDismiss = SystemClock.uptimeMillis()
+            if (listOf(opacityBar, opacityButtonHalves, opacityButtonFloating).none { it.isVisible && containsOnScreen(it, x, y) })
                 setOpacityBarVisible(false)
-            }
         }
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun containsOnScreen(view: View, x: Float, y: Float): Boolean {
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return x >= location[0] && x < location[0] + view.width && y >= location[1] && y < location[1] + view.height
     }
 
     private var interactionStartX = 0f
@@ -294,7 +337,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
             panel.clipToOutline = true
             panel.doOnLayout { colors.setBackground(panel, ColorType.MAIN_BACKGROUND) }
         }
-        listOf(handleLeft, handleRight, gripLeft, gripRight).forEach { colors.setColor(it, ColorType.ONE_HANDED_MODE_BUTTON) }
+        listOf(handleLeft, handleRight, gripLeft, gripRight, opacityButtonHalves).forEach { colors.setColor(it, ColorType.ONE_HANDED_MODE_BUTTON) }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -316,6 +359,7 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         measureExactly(handleRight, tmpRect.width(), tmpRect.height())
         measureExactly(gripLeft, HalvesLayout.gripSize, HalvesLayout.gripSize)
         measureExactly(gripRight, HalvesLayout.gripSize, HalvesLayout.gripSize)
+        measureExactly(opacityButtonHalves, HalvesLayout.handleHeight, HalvesLayout.handleHeight)
         if (opacityBar.visibility != GONE && opacityBar.parent === this)
             measureExactly(opacityBar, HalvesLayout.opacityBar.width(), HalvesLayout.opacityBar.height())
     }
@@ -324,6 +368,9 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         view.measure(MeasureSpec.makeMeasureSpec(width.coerceAtLeast(0), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height.coerceAtLeast(0), MeasureSpec.EXACTLY))
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        // The opacity depends on the mode (docked, floating, halves) and is also reset when views are replaced, and not every
+        // way of switching modes calls applyOpacity. Doing it here keeps it right; unchanged values do nothing.
+        applyOpacity()
         if (!halvesMode) {
             super.onLayout(changed, l, t, r, b)
             return
@@ -340,6 +387,8 @@ class KeyboardFrameLayout @JvmOverloads constructor(
         val grip = HalvesLayout.gripSize
         gripLeft.layout(HalvesLayout.left.right - grip, HalvesLayout.left.bottom - grip, HalvesLayout.left.right, HalvesLayout.left.bottom)
         gripRight.layout(HalvesLayout.right.left, HalvesLayout.right.bottom - grip, HalvesLayout.right.left + grip, HalvesLayout.right.bottom)
+        HalvesLayout.opacityButtonRect(tmpRect)
+        opacityButtonHalves.layout(tmpRect)
         if (opacityBar.visibility != GONE && opacityBar.parent === this) opacityBar.layout(HalvesLayout.opacityBar)
         floatingHandleContainer.layout(0, 0, 0, 0)
     }
@@ -350,9 +399,14 @@ class KeyboardFrameLayout @JvmOverloads constructor(
     // Handles and grips are after the wrapper in the layout, so they are above the keyboard view as well.
     override fun getChildDrawingOrder(childCount: Int, drawingPosition: Int): Int {
         if (!halvesMode || !::strip.isInitialized) return drawingPosition
-        // strip and opacity bar are drawn last (and get touches first), the other children keep their order
-        val last = listOf(indexOfChild(strip), indexOfChild(opacityBar)).filter { it >= 0 }
+        // strip, opacity bar and the opacity button are drawn last (and get touches first), the other children keep their order
+        val last = listOf(indexOfChild(strip), indexOfChild(opacityBar), indexOfChild(opacityButtonHalves)).filter { it >= 0 }
         val rest = (0 until childCount).filter { it !in last }
         return if (drawingPosition < rest.size) rest[drawingPosition] else last[drawingPosition - rest.size]
+    }
+
+    private companion object {
+        /** the opacity slider hides itself after this time without being used */
+        const val OPACITY_BAR_TIMEOUT_MS = 4000L
     }
 }
