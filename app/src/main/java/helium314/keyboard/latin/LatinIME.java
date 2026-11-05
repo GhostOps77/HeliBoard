@@ -737,6 +737,7 @@ public class LatinIME extends InputMethodService implements
 
         if (DebugFlags.DEBUG_ENABLED)
             Log.d(TAG, "switching to subtype " + SettingsSubtype.Companion.toSettingsSubtype(subtype));
+        mKeyboardActionListener.resetMetaState(); // a pressed ctrl / alt must not carry over to the new language
         mSubtypeState.onSubtypeChanged(oldSubtype, subtype);
         StatsUtils.onSubtypeChanged(oldSubtype, subtype);
         mRichImm.onSubtypeChanged(subtype);
@@ -772,6 +773,7 @@ public class LatinIME extends InputMethodService implements
 
     void onStartInputViewInternal(EditorInfo editorInfo, boolean restarting) {
         super.onStartInputView(editorInfo, restarting);
+        if (!restarting) mKeyboardActionListener.resetMetaState(); // new text field: nothing may stay pressed from before
 
         setGestureDataGatheringMode(editorInfo, restarting);
 
