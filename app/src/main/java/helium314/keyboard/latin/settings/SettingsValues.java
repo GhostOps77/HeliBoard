@@ -151,8 +151,6 @@ public class SettingsValues {
     public final boolean mFloatingHalvesAvailable;
     /** halves are moved together vertically with the left handle, and the toolbar is only above the right half */
     public final boolean mFloatingHalvesLinked;
-    /** the opacity toolbar key / slider works for all keyboard modes, not only for the floating halves */
-    public final boolean mOpacityEverywhere;
     /** when a swiped word is committed: {@link Settings#SWIPE_COMMIT_IMMEDIATE}, _HIGHLIGHT or _HOLD */
     public final String mSwipeCommitMode;
     /** whether a swipe that starts in the middle of a word adds to that word, see {@link Settings#SWIPE_CONTINUES_TYPED} */
